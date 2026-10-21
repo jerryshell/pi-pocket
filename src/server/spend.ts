@@ -161,6 +161,12 @@ export class Spend {
         this.#stopOverLimit();
     }
 
+    /** A conversation is deleted: forget its spend. Its person's total stays, and its usage document goes with it. */
+    forget(id: ConversationId): void {
+        this.#costs.delete(id);
+        this.#owed.delete(id);
+    }
+
     /** What a session spent: itself and its subagents. */
     sessionSpent(root: ConversationId): number {
         let spent = 0;

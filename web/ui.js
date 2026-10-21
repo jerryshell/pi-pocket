@@ -935,6 +935,7 @@ const ICONS = {
     swatch: "M4 4h7v16H4zM11 9l6-4 3 5-9 6M11 16h9v4h-9",
     home: "M3 11l9-7 9 7M5 10v10h14V10",
     archive: "M3 4h18v4H3zM5 8v12h14V8M10 12h4",
+    trash: "M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v5M14 11v5",
     unarchive: "M3 4h18v4H3zM5 8v12h14V8M12 18v-6M9 15l3-3 3 3",
     unread: "M3 6h18v12H3zM3 7l9 5 9-5M20.5 3.5h.01",
     check: "M5 12l5 5L20 7",

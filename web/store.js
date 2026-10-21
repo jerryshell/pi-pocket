@@ -626,6 +626,15 @@ const handlers = {
             sessionsLoaded: true,
             moving: stillMoving(state.moving, sessions),
         })),
+    // A session was deleted for good: a tab showing it leaves for the list.
+    deleted: (data) => {
+        if (
+            store.state.conversationId !== null &&
+            Number(data.conversationId) === store.state.conversationId
+        ) {
+            navigate(null);
+        }
+    },
     "folder-favorites": (folderFavorites) => store.set({ folderFavorites }),
     models: (models) => store.set({ models }),
     // A theme folder came, went, or changed (`theme.js` loads its new version).
@@ -1137,6 +1146,8 @@ export const actions = {
     createSession: (cwd, { worktree = false } = {}) =>
         api("sessions", { cwd, ...(worktree ? { worktree } : {}) }),
     updateSession: (id, patch) => api(`sessions/${id}`, patch),
+    /** Delete an archived session for good; the owner alone may do this. */
+    deleteSession: (id) => api(`sessions/${id}/delete`, {}),
     upload: (file) => api(`c/${current()}/upload?name=${encodeURIComponent(file.name)}`, file),
     fullEntry: (entryId) => api(`c/${current()}/entry/${entryId}`),
     history: (before) => api(`c/${current()}/history?before=${before}`),

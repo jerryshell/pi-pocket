@@ -4750,6 +4750,11 @@ pre.diff .del {
         color: var(--accent);
         border-color: var(--accent-line);
     }
+
+    .session-act.session-delete:hover {
+        color: var(--err);
+        border-color: var(--err);
+    }
 }
 
 .session-act + .session-act {
@@ -4785,6 +4790,9 @@ pre.diff .del {
     .session-row.one-act:hover .session-side {
         min-width: 26px;
     }
+    .session-row.two-acts:hover .session-side {
+        min-width: 56px;
+    }
     /* Three live buttons: archive, pin, and mark-unread. */
     .session-row.three-acts:hover .session-side {
         min-width: 86px;
@@ -4801,6 +4809,9 @@ pre.diff .del {
     }
     .session-row.one-act:has(:focus-visible) .session-side {
         min-width: 26px;
+    }
+    .session-row.two-acts:has(:focus-visible) .session-side {
+        min-width: 56px;
     }
     .session-row.three-acts:has(:focus-visible) .session-side {
         min-width: 86px;
@@ -8102,6 +8113,7 @@ textarea.notes {
     margin-left: auto;
 }
 
+.button.danger,
 .lesson-actions .button.danger {
     border-color: var(--err);
     color: var(--err);

@@ -59,6 +59,18 @@ export const SessionsDoc = defineDoc<{ items: Record<string, SessionMeta> }>({
     initial: () => ({ items: {} }),
 });
 
+/**
+ * Sessions whose data is still to be removed from the SQLite file. Deleting one takes it out of `SessionsDoc` first,
+ * so it disappears at once; this list makes the row removal survive a failure or a restart. Empty when nothing waits.
+ */
+export const PurgeDoc = defineDoc<{ ids: number[] }>({
+    kind: "pocket.purge",
+    version: 1,
+    ...rebased,
+    scope: "session",
+    initial: () => ({ ids: [] }),
+});
+
 /** Favorite working folders in shortcut order, private to each person and shared by their devices. */
 export const FolderFavoritesDoc = defineDoc<{ users: Record<string, string[]> }>({
     kind: "pocket.folder-favorites",

@@ -35,11 +35,15 @@ import type { User } from "./config.ts";
 import {
     AuthorsDoc,
     ChatDoc,
+    HooksDoc,
     NotesDoc,
     PinsDoc,
     PlanDoc,
+    PurgeDoc,
+    RepoWatchesDoc,
     type Schedule,
     SessionsDoc,
+    SpendDoc,
     STOPPED,
     type SubagentRecord,
     SubagentsDoc,
@@ -683,6 +687,98 @@ export class Commands {
                     : "brought the session back from the archive",
             );
         }
+    }
+
+    /**
+     * Delete an archived session for good. Only the owner may do this. Its catalogue entry goes first, in one commit
+     * with the hooks, repository watches, and spend record that point at it; then its rows and uploads are removed
+     * (`purge.ts`). A failure leaves a place in `PurgeDoc` so the next start finishes the job.
+     */
+    async deleteSession(id: ConversationId, user: User): Promise<void> {
+        const app = this.#app;
+
+        if (user.role !== "owner") {
+            throw new HttpError(403, "Only the owner can delete a session.");
+        }
+
+        app.requireSee(user, id);
+        const meta = app.sessionMeta(id);
+
+        if (meta === undefined) {
+            throw new HttpError(404, "Not a session");
+        }
+
+        if (meta.archived !== true) {
+            throw new HttpError(409, "Archive the session before deleting it.");
+        }
+
+        if (meta.worktree !== undefined) {
+            throw new HttpError(409, "Remove the session's worktree before deleting it.");
+        }
+
+        if (app.busyConversations().some((busy) => app.rootOf(busy) === id)) {
+            throw new HttpError(409, "The session is working. Stop it before deleting it.");
+        }
+
+        const listed = app.sessions().find((session) => session.id === Number(id));
+        const working = listed?.subagents?.working ?? 0;
+        const waiting = listed?.subagents?.waiting ?? 0;
+
+        if (listed?.waiting === true || working > 0 || waiting > 0) {
+            throw new HttpError(409, "Something in the session still works or waits for you.");
+        }
+
+        if (app.sessions().some((session) => session.forkedFrom?.id === Number(id))) {
+            throw new HttpError(
+                409,
+                "Another session was forked from this one. Delete that session first.",
+            );
+        }
+
+        await app.harness.commit(async (tx) => {
+            const sessions = await tx.doc(SessionsDoc);
+
+            if (sessions.items[String(id)] === undefined) {
+                throw new HttpError(404, "Not a session");
+            }
+
+            delete sessions.items[String(id)];
+
+            // A session this one started stays, but no longer points at a session that is gone.
+            for (const meta of Object.values(sessions.items)) {
+                if (meta.linkedFrom?.id === Number(id)) {
+                    delete meta.linkedFrom;
+                }
+            }
+
+            const spend = await tx.doc(SpendDoc);
+
+            delete spend.counted[String(id)];
+
+            const hooks = await tx.doc(HooksDoc);
+
+            for (const [key, hook] of Object.entries(hooks.items)) {
+                if (hook.target === Number(id)) {
+                    delete hooks.items[key];
+                }
+            }
+
+            const watches = await tx.doc(RepoWatchesDoc);
+
+            for (const [key, watch] of Object.entries(watches.items)) {
+                if (watch.target === Number(id)) {
+                    delete watches.items[key];
+                }
+            }
+
+            const purge = await tx.doc(PurgeDoc);
+
+            if (!purge.ids.includes(Number(id))) {
+                purge.ids.push(Number(id));
+            }
+        }, context);
+
+        await app.purgeSessionData([id]);
     }
 
     /**

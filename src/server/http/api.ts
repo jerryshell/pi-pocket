@@ -480,6 +480,17 @@ export function createApi(options: HttpOptions, auth: Auth) {
             return json(response, 200, await app.commands.createSession(user, body));
         }
 
+        if (
+            first === "sessions" &&
+            second !== undefined &&
+            third === "delete" &&
+            method === "POST"
+        ) {
+            await app.commands.deleteSession(conversationId(second), user);
+
+            return json(response, 200, { ok: true });
+        }
+
         if (first === "sessions" && second !== undefined && method === "POST") {
             const body = await readJson<{ title?: string; archived?: boolean }>(request);
 

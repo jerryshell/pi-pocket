@@ -1,5 +1,5 @@
 // A session's actions from its row in the session list, for touch screens, which cannot hover to show them.
-import { selectFromList, setArchived } from "../sessions.js";
+import { deleteSessions, selectFromList, setArchived } from "../sessions.js";
 import { canSteer, closeSheet, isUnread, setUnread, store } from "../store.js";
 import { isPinned, togglePin } from "../theme.js";
 import { html, item, Sheet } from "../ui.js";
@@ -40,6 +40,16 @@ export function SessionSheet({ id }) {
             item(
                 session.archived ? "Unarchive" : "Archive",
                 then(() => setArchived([id], !session.archived)),
+            )
+        }
+        ${
+            steer &&
+            session.archived &&
+            store.state.me?.role === "owner" &&
+            item(
+                "Delete permanently",
+                then(() => deleteSessions([id])),
+                "cannot be undone",
             )
         }
         ${item(

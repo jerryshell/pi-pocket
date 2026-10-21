@@ -7,6 +7,7 @@
  * `alerts.ts`, provider sign-ins in `providers.ts`, and each conversation's shared live view in `room.ts`.
  */
 import { rmSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -59,8 +60,10 @@ import {
     DecisionsDoc,
     FolderFavoritesDoc,
     MemoryDoc,
+    PurgeDoc,
     type SessionMeta,
     SessionsDoc,
+    SpendDoc,
     type SubagentRecord,
     SubagentsDoc,
     TurnsDoc,
@@ -90,6 +93,7 @@ import { Hooks } from "./hooks.ts";
 import { Pip, PIP_EXTENSION } from "./pip.ts";
 import { PIP_COMPACT_CHOICES, PipCompaction } from "./pip-compact.ts";
 import { RepoWatches } from "./repo-watches.ts";
+import { purgeConversations } from "./purge.ts";
 import { snippet } from "./projection.ts";
 import { loadPromptTemplates, type PromptTemplate, type SkillCommand } from "./prompts.ts";
 import { BASE_THEME, Themes } from "./themes.ts";
@@ -339,6 +343,8 @@ export class PocketApp {
     #unsubscribeApprovals: (() => void) | undefined;
     #unsubscribeBrowsers: (() => void) | undefined;
     #lockFile: string;
+    /** The SQLite storage, for removing a deleted session's rows (`purge.ts`); the Harness reads it as a `Storage`. */
+    #storage: Storage | undefined;
     #closing: Promise<void> | undefined;
     readonly #log: (line: string) => void;
     readonly #configureModels: ((models: ModelRuntime) => void) | undefined;
@@ -600,6 +606,8 @@ export class PocketApp {
 
         const storage = await openNodeSqliteStorage(join(this.dataDir, "pocket.sqlite"));
 
+        this.#storage = storage;
+
         this.harness = await Harness.open(
             storage,
             {
@@ -618,6 +626,9 @@ export class PocketApp {
             },
             context,
         );
+
+        // A deletion the last process did not finish is completed before the sessions it left are read back.
+        await this.#purgePending();
 
         const conversations = await this.#recover(storage);
 
@@ -717,6 +728,135 @@ export class PocketApp {
         await this.attribution.repair(unrecorded);
 
         return conversations;
+    }
+
+    /**
+     * Complete a deletion the last process did not finish. The session is already out of `SessionsDoc`; remove its rows
+     * and uploads, then clear its place in `PurgeDoc`. A failure leaves it there for the next start.
+     */
+    async #purgePending(): Promise<void> {
+        const pending = await this.harness.snapshot(PurgeDoc, context);
+        const ids = pending?.ids ?? [];
+
+        if (ids.length === 0) {
+            return;
+        }
+
+        try {
+            const removed = await purgeConversations(
+                this.#storage!,
+                ids.map((id) => id as ConversationId),
+            );
+
+            await this.#removeUploads(removed);
+            await this.harness.commit(async (tx) => {
+                const doc = await tx.doc(PurgeDoc);
+                const spend = await tx.doc(SpendDoc);
+
+                doc.ids = doc.ids.filter((id) => !ids.includes(id));
+
+                for (const id of removed) {
+                    delete spend.counted[String(id)];
+                }
+            }, context);
+        } catch (error) {
+            this.#log(`deleted session data not removed: ${describe(error)}`);
+        }
+    }
+
+    /** Remove a deleted session's rows and uploads now, and forget it everywhere in memory. Errors leave `PurgeDoc`. */
+    async purgeSessionData(ids: readonly ConversationId[]): Promise<void> {
+        if (this.#storage === undefined) {
+            return;
+        }
+
+        try {
+            const removed = await purgeConversations(this.#storage, ids);
+
+            await this.#removeUploads(removed);
+            this.#forgetConversations(removed);
+            this.#announceDeleted(removed);
+            await this.harness.commit(async (tx) => {
+                const doc = await tx.doc(PurgeDoc);
+                const spend = await tx.doc(SpendDoc);
+
+                doc.ids = doc.ids.filter((id) => !ids.includes(id as ConversationId));
+
+                for (const id of removed) {
+                    delete spend.counted[String(id)];
+                }
+            }, context);
+        } catch (error) {
+            // The session is already out of the list. The rows stay, and the next start tries again.
+            this.#log(`deleted session data not removed: ${describe(error)}`);
+        }
+    }
+
+    async #removeUploads(ids: readonly ConversationId[]): Promise<void> {
+        for (const id of ids) {
+            try {
+                await rm(join(this.dataDir, "uploads", String(id)), {
+                    recursive: true,
+                    force: true,
+                });
+            } catch (error) {
+                this.#log(
+                    `uploads for deleted session ${String(id)} not removed: ${describe(error)}`,
+                );
+            }
+        }
+    }
+
+    /** Drop what this process kept for conversations that no longer exist. */
+    #forgetConversations(ids: readonly ConversationId[]): void {
+        const gone = new Set<number>(ids.map(Number));
+
+        for (const id of ids) {
+            this.#busy.delete(id);
+            this.#endedAt.delete(id);
+            this.#failed.delete(id);
+            this.#agents.delete(id);
+            this.#lastChat.delete(String(id));
+            this.#parents.delete(id);
+            this.#subagents.delete(id);
+            this.spend.forget(id);
+        }
+
+        // A subagent's record lives in its parent's document, which went with its session.
+        for (const [parent, of] of this.#subagents) {
+            for (const [name, record] of Object.entries(of.agents)) {
+                if (gone.has(record.conversationId)) {
+                    delete of.agents[name];
+                }
+            }
+
+            if (Object.keys(of.agents).length === 0) {
+                this.#subagents.delete(parent);
+            }
+        }
+    }
+
+    /** Tell tabs that showed a deleted conversation to leave it, and close its shared view. */
+    #announceDeleted(ids: readonly ConversationId[]): void {
+        for (const id of ids) {
+            const pending = this.#rooms.get(id);
+
+            if (pending !== undefined) {
+                this.#rooms.delete(id);
+                void pending.then(
+                    (room) => room.close(),
+                    () => {},
+                );
+            }
+        }
+
+        for (const client of this.#clients) {
+            if (client.conversationId !== undefined && ids.includes(client.conversationId)) {
+                client.send("deleted", { conversationId: Number(client.conversationId) });
+            }
+        }
+
+        this.#scheduleSessions();
     }
 
     /** Every commit, as Pi Durable publishes it: what the app keeps in memory follows it, and so do the open views. */

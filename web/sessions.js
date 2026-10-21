@@ -123,6 +123,58 @@ export async function setArchived(ids, archived, { undo = true } = {}) {
 }
 
 /**
+ * Delete archived sessions for good, after one confirmation. The owner alone sees this; the server refuses anyone else.
+ * There is no undo: the sessions' messages, files, uploads, and records go.
+ */
+export async function deleteSessions(ids) {
+    const targets = ids.filter((id) =>
+        store.state.sessions.some((session) => session.id === id && session.archived === true),
+    );
+
+    if (targets.length === 0) {
+        return;
+    }
+
+    const titles = new Map(
+        store.state.sessions.map((session) => [session.id, session.title ?? "New session"]),
+    );
+    const title = titles.get(targets[0]) ?? "";
+    const what =
+        targets.length === 1
+            ? `“${title.length > 60 ? `${title.slice(0, 59)}…` : title}”`
+            : `${targets.length} archived sessions`;
+
+    if (
+        !confirm(
+            `Delete ${what} permanently?\n\n` +
+                `${targets.length === 1 ? "Its" : "Their"} messages, files, uploads, and records cannot be recovered.`,
+        )
+    ) {
+        return;
+    }
+
+    const results = await Promise.allSettled(targets.map((id) => actions.deleteSession(id)));
+    const done = targets.filter((_, index) => results[index].status === "fulfilled");
+    const failed = results.find((result) => result.status === "rejected");
+
+    if (failed) {
+        notify("error", failed.reason?.message ?? String(failed.reason));
+    }
+
+    if (done.length === 0) {
+        return;
+    }
+
+    const open = store.state.conversationId;
+
+    if (open !== null && done.includes(open)) {
+        navigate(null);
+    }
+
+    notify("info", `Deleted ${done.length === 1 ? what : `${done.length} sessions`}.`);
+}
+
+/**
  * Mark sessions as on their way into the archive (true) or out of it (false). The store drops a mark once the list
  * shows the session where it was going; should that never happen (someone moved it straight back, or the request
  * hangs), the mark goes after a while anyway.
@@ -357,10 +409,13 @@ function SessionRow({
     // Finished since this browser last looked: its result is unread, so its title reads bold.
     const unseen = finishedUnseen(session);
     // Archive, pin, and mark-unread show on hover; an archived session only comes back, and only for people who steer.
-    const acts = (canSteer() ? 1 : 0) + (session.archived ? 0 : 2);
+    // The owner also gets a trash button on an archived row.
+    const deletes = store.state.me?.role === "owner";
+    const acts =
+        (canSteer() ? 1 : 0) + (session.archived ? 0 : 2) + (session.archived && deletes ? 1 : 0);
 
     return html`<div
-        class=${`session-row ${open ? "active" : ""} ${selected ? "selected" : ""} ${pressing ? "pressing" : ""} ${moving ? "moving" : ""} ${marked ? "marked-unread" : ""} ${unseen ? "unseen" : ""} ${["no-acts", "one-act", "", "three-acts"][acts]}`}
+        class=${`session-row ${open ? "active" : ""} ${selected ? "selected" : ""} ${pressing ? "pressing" : ""} ${moving ? "moving" : ""} ${marked ? "marked-unread" : ""} ${unseen ? "unseen" : ""} ${["no-acts", "one-act", "two-acts", "three-acts"][acts]}`}
         data-part="session-row"
         data-state=${ROW_STATES[mark.shape.split(" ")[0]]}
         data-id=${session.id}
@@ -459,6 +514,18 @@ function SessionRow({
                     onClick=${() => setArchived([session.id], !session.archived)}
                 >
                     <${Icon} name=${session.archived ? "unarchive" : "archive"} size=${14} />
+                </button>`
+            }
+            ${
+                session.archived &&
+                deletes &&
+                html`<button
+                    class="session-act session-delete"
+                    title="Delete permanently"
+                    aria-label="Delete permanently"
+                    onClick=${() => deleteSessions([session.id])}
+                >
+                    <${Icon} name="trash" size=${14} />
                 </button>`
             }
             ${
@@ -944,6 +1011,13 @@ function AllSessions({ compact = false }) {
         setArchived(chosen, !archived);
     };
 
+    const deleteChosen = () => {
+        const ids = chosen;
+
+        clearSelection();
+        deleteSessions(ids);
+    };
+
     const allPinned = chosen.length > 0 && chosen.every((id) => pinned.includes(id));
 
     const pinChosen = () => {
@@ -1176,6 +1250,11 @@ function AllSessions({ compact = false }) {
                     html`<button class="button" onClick=${archiveChosen}>
                         ${archived ? "Unarchive" : "Archive"}
                     </button>`
+                }
+                ${
+                    archived &&
+                    store.state.me?.role === "owner" &&
+                    html`<button class="button danger" onClick=${deleteChosen}>Delete</button>`
                 }
                 ${
                     !archived &&
