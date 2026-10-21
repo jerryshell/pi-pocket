@@ -13,7 +13,3 @@ A fork of [TannerMidd/pi-pocket](https://github.com/TannerMidd/pi-pocket), a sel
 The app asks once, then removes the session's transcript, documents, tasks, submissions, uploads, per-session spending record, and hooks or repository watches that pointed at it. It refuses a session that is working, has a worktree, or is the source of a fork. A cleanup that did not finish is retried at the next server start.
 
 Everything else is upstream's. Use the [upstream repository](https://github.com/TannerMidd/pi-pocket) for the original project, documentation, and releases.
-
-## License
-
-[MIT](LICENSE).
