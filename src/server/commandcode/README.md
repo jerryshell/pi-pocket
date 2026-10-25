@@ -23,6 +23,11 @@ Pi Pocket adapts it in `../extensions/commandcode.ts`:
 - `/commandcode-quota` (the owner's) reads `/alpha/whoami`, `billing/credits`,
   `billing/subscriptions`, and `usage/summary`, and shows them as a card. The card leaves
   out the account's login, because everyone in the session sees it.
+- Menu → **Command Code usage** (the owner's too) opens a sheet with the same numbers,
+  a bar for the credits and for each window, and Refresh; its hint shows the rest. The
+  browser module is `extensions/commandcode/` (`index.js`, `style.css`), served by two
+  owner-only routes, `GET usage` and `POST usage` (`{ fresh: true }` skips a 30-second
+  cached answer).
 
 Not included: the `/alpha/generate` fallback, the Responses stream normalization, the
 `/commandcode-refresh` and `/commandcode-status` commands (the Providers sheet has the

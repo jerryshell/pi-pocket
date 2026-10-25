@@ -33,7 +33,8 @@ import {
 import { MODEL_COSTS, ZERO_MODEL_COST } from "../commandcode/pricing.ts";
 import { formatQuota } from "../commandcode/quota-format.ts";
 import { fetchCommandCodeQuota, redactValue } from "../commandcode/quota.ts";
-import type { ExtensionWeb, PocketHost } from "../host.ts";
+import type { CommandCodeQuota, CommandCodeQuotaResult } from "../commandcode/quota-types.ts";
+import type { ExtensionWeb, PocketHost, WebRequest } from "../host.ts";
 
 /** A chat model's config: the union `models` takes narrows to this one by its required `reasoning`. */
 type ChatModelConfig = Extract<
@@ -41,6 +42,28 @@ type ChatModelConfig = Extract<
     { reasoning: boolean }
 >;
 type OAuthLogin = Parameters<NonNullable<ProviderConfig["oauth"]>["login"]>[0];
+
+/** How long one answer of the account's endpoints serves the menu and the sheet. */
+const QUOTA_FRESH_MS = 30_000;
+
+/** What the menu's hint and the sheet read: the numbers, for the browser to format. */
+interface UsageView {
+    at: number;
+    remaining: number;
+    spent: number;
+    pool: number;
+    percent: number;
+    plan: string | null;
+    periodEnd: string | null;
+    windows: {
+        id: "fiveHour" | "weekly";
+        used: number;
+        cap: number;
+        percent: number;
+        resetAt: number | null;
+    }[];
+    unavailable: string[];
+}
 
 /** The provider's base URL without its provider path: the account's own endpoints sit beside it. */
 function accountApiBase(providerApiBase: string): string {
@@ -221,34 +244,102 @@ export default async function createCommandCode(
 
     web.onDispose(host.registerModelProvider("commandcode", config));
 
+    // The account's endpoints cost four requests: the menu's hint and the sheet share one answer for a moment.
+    let asked: { at: number; quota: CommandCodeQuota; view: UsageView } | undefined;
+
+    const readQuota = async (fresh = false): Promise<CommandCodeQuotaResult> => {
+        if (!fresh && asked !== undefined && Date.now() - asked.at < QUOTA_FRESH_MS) {
+            return { ok: true, quota: asked.quota };
+        }
+
+        const apiKey = getConfiguredApiKey({ authPaths: [join(host.agentDir, "auth.json")] });
+
+        if (apiKey === undefined) {
+            return {
+                ok: false,
+                error: {
+                    kind: "config",
+                    message:
+                        "Command Code has no sign-in yet: Menu → Providers → Command Code → API key.",
+                },
+            };
+        }
+
+        const result = await fetchCommandCodeQuota({
+            apiKey,
+            baseUrl: accountApiBase(apiBase),
+            ...(headers === undefined ? {} : { extraHeaders: headers }),
+        });
+
+        if (result.ok) {
+            const at = Date.now();
+
+            asked = { at, quota: result.quota, view: usageView(result.quota, at) };
+        }
+
+        return result;
+    };
+
+    const usageView = (quota: CommandCodeQuota, at: number): UsageView => {
+        const remaining = quota.credits?.remainingCredits ?? 0;
+        const spent = quota.summary?.totalCost ?? 0;
+        const pool = remaining + spent;
+
+        return {
+            at,
+            remaining,
+            spent,
+            pool,
+            percent: pool > 0 ? Math.round((spent / pool) * 100) : 0,
+            plan: quota.subscription?.status ?? null,
+            periodEnd: quota.subscription?.currentPeriodEnd ?? null,
+            windows: (quota.credits?.windowLimits ?? []).map((limit) => ({
+                id: limit.window,
+                used: limit.used,
+                cap: limit.cap,
+                percent: limit.cap > 0 ? Math.round((limit.used / limit.cap) * 100) : 0,
+                resetAt: limit.resetAt,
+            })),
+            unavailable: [...(quota.unavailable ?? [])],
+        };
+    };
+
+    const usageRoute = async (fresh: boolean): Promise<UsageView> => {
+        const result = await readQuota(fresh);
+
+        if (!result.ok) {
+            throw web.error(
+                result.error.kind === "config" ? 400 : 502,
+                redactValue(result.error.message),
+            );
+        }
+
+        // `readQuota` stored the view of the answer it gave, cached or new.
+        return asked!.view;
+    };
+
+    // The owner's alone: the menu row, its sheet, and this route are not there for anyone else.
+    web.route("GET", "usage", () => usageRoute(false), { access: "owner" });
+    web.route(
+        "POST",
+        "usage",
+        (request: WebRequest) =>
+            usageRoute((request.body as { fresh?: unknown } | undefined)?.fresh === true),
+        { access: "owner" },
+    );
+    web.client("commandcode", { access: "owner" });
+
     // The owner's alone: the card goes to the session it was typed in, so the account's login (an email) stays out.
     web.command("commandcode-quota", {
         description: "Show Command Code usage, credits, and limits",
         scope: "global",
         handler: async () => {
-            const apiKey = getConfiguredApiKey({
-                authPaths: [join(host.agentDir, "auth.json")],
-            });
-
-            if (apiKey === undefined) {
-                return {
-                    type: "toast",
-                    level: "warning",
-                    message:
-                        "Command Code has no sign-in yet: Menu → Providers → Command Code → API key.",
-                };
-            }
-
-            const result = await fetchCommandCodeQuota({
-                apiKey,
-                baseUrl: accountApiBase(apiBase),
-                ...(headers === undefined ? {} : { extraHeaders: headers }),
-            });
+            const result = await readQuota();
 
             if (!result.ok) {
                 return {
                     type: "toast",
-                    level: "error",
+                    level: result.error.kind === "config" ? "warning" : "error",
                     message: redactValue(result.error.message),
                 };
             }

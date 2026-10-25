@@ -1,0 +1,62 @@
+/* Command Code's usage sheet: the credits bar, then a bar for each window, in the app's colors. */
+.code-usage {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.usage-head {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.usage-remaining {
+    font-size: 1.5em;
+    font-variant-numeric: tabular-nums;
+}
+
+.usage-bar {
+    height: 6px;
+    overflow: hidden;
+    border-radius: var(--r-pill);
+    background: var(--card-2);
+}
+
+.usage-bar > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent);
+}
+
+.usage-bar.small {
+    height: 4px;
+}
+
+.usage-windows {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.usage-window {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.usage-window-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.9em;
+    font-variant-numeric: tabular-nums;
+}
+
+.usage-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
