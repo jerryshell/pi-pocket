@@ -38,6 +38,14 @@ const CACHED = {
             contextWindow: 1_000_000,
             maxTokens: 65_536,
         },
+        {
+            id: "minimax/minimax-m3.1-flash:free",
+            name: "MiniMax M3.1 Flash (CC)",
+            api: "openai-responses",
+            reasoning: true,
+            contextWindow: 1_000_000,
+            maxTokens: 65_536,
+        },
     ],
 };
 
@@ -127,6 +135,12 @@ test("the cached catalog is registered with each model's own wire, sign-in, and 
     );
     assert.equal(sol?.cost.input, 5, "the provider's table prices it");
     assert.equal(sol?.cost.tiers?.[0]?.inputTokensAbove, 272_000, "and its long-prompt tier");
+
+    assert.equal(
+        app.models.getModel("commandcode", "minimax/minimax-m3.1-flash:free")?.name,
+        "MiniMax M3.1 Flash (Free)",
+        "a free model says so: its paid twin has the same name",
+    );
 
     const flash = app.models.getModel("commandcode", "deepseek/deepseek-v4.1-flash");
 

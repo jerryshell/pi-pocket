@@ -75,6 +75,16 @@ function compatForModel(model: CommandCodeModel): ChatModelConfig["compat"] {
     };
 }
 
+/** The ids whose models are free for now: a `:free` or `-free` id, which shares its name with the paid one. */
+const FREE = /(?:^|[:/-])free$/;
+
+/** The catalog's name without the provider's own "(CC)", and marked "(Free)" where the id is. */
+function displayName(model: CommandCodeModel): string {
+    const name = model.name.replace(/ \(CC\)$/, "");
+
+    return FREE.test(model.id) ? `${name} (Free)` : name;
+}
+
 /** One model as Pi's runtime takes it: its wire, limits, image input, thinking levels, and display price. */
 function modelConfig(model: CommandCodeModel, apiBase: string): ChatModelConfig {
     const metadata = thinkingMetadataForModel(model.id);
@@ -82,8 +92,7 @@ function modelConfig(model: CommandCodeModel, apiBase: string): ChatModelConfig 
 
     return {
         id: model.id,
-        // The catalog adds "(CC)" to its names: the provider id already says Command Code.
-        name: model.name.replace(/ \(CC\)$/, ""),
+        name: displayName(model),
         api: model.api,
         baseUrl: baseUrlForModel(apiBase, model.api),
         reasoning: model.reasoning,
