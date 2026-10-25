@@ -1,12 +1,14 @@
 /**
- * Command Code: its Provider API as a model provider, with a browser or API-key sign-in and the live model catalog.
+ * Command Code: its Provider API as a model provider, with a browser or API-key sign-in, the live model catalog, and
+ * `/commandcode-quota` for the account's credits and usage windows.
  *
- * Vendored from `patlux/pi-commandcode-provider` (`src/server/commandcode/`): the catalog, its cache, and the
- * sign-in. Streaming goes through Pi's own OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages
- * transports, which the catalog chooses for each model.
+ * Vendored from `patlux/pi-commandcode-provider` (`src/server/commandcode/`): the catalog, its cache, the sign-in,
+ * and the account's endpoints. Streaming goes through Pi's own OpenAI Chat Completions, OpenAI Responses, and
+ * Anthropic Messages transports, which the catalog chooses for each model.
  */
 import type { ProviderConfig } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
+import { getConfiguredApiKey } from "../commandcode/api-key.ts";
 import {
     baseUrlForModel,
     DEFAULT_MODELS_URL,
@@ -29,6 +31,8 @@ import {
     type OAuthCredentials,
 } from "../commandcode/oauth.ts";
 import { MODEL_COSTS, ZERO_MODEL_COST } from "../commandcode/pricing.ts";
+import { formatQuota } from "../commandcode/quota-format.ts";
+import { fetchCommandCodeQuota, redactValue } from "../commandcode/quota.ts";
 import type { ExtensionWeb, PocketHost } from "../host.ts";
 
 /** A chat model's config: the union `models` takes narrows to this one by its required `reasoning`. */
@@ -37,6 +41,11 @@ type ChatModelConfig = Extract<
     { reasoning: boolean }
 >;
 type OAuthLogin = Parameters<NonNullable<ProviderConfig["oauth"]>["login"]>[0];
+
+/** The provider's base URL without its provider path: the account's own endpoints sit beside it. */
+function accountApiBase(providerApiBase: string): string {
+    return providerApiBase.replace(/\/provider\/v1\/?$/, "");
+}
 
 /** Command Code's headers: zero-data-retention when the owner asked for it (`CMD_ZDR=1`). */
 function commandCodeHeaders(): Record<string, string> | undefined {
@@ -211,4 +220,49 @@ export default async function createCommandCode(
     };
 
     web.onDispose(host.registerModelProvider("commandcode", config));
+
+    // The owner's alone: the card goes to the session it was typed in, so the account's login (an email) stays out.
+    web.command("commandcode-quota", {
+        description: "Show Command Code usage, credits, and limits",
+        scope: "global",
+        handler: async () => {
+            const apiKey = getConfiguredApiKey({
+                authPaths: [join(host.agentDir, "auth.json")],
+            });
+
+            if (apiKey === undefined) {
+                return {
+                    type: "toast",
+                    level: "warning",
+                    message:
+                        "Command Code has no sign-in yet: Menu → Providers → Command Code → API key.",
+                };
+            }
+
+            const result = await fetchCommandCodeQuota({
+                apiKey,
+                baseUrl: accountApiBase(apiBase),
+                ...(headers === undefined ? {} : { extraHeaders: headers }),
+            });
+
+            if (!result.ok) {
+                return {
+                    type: "toast",
+                    level: "error",
+                    message: redactValue(result.error.message),
+                };
+            }
+
+            return {
+                type: "card",
+                output: formatQuota({
+                    ...result.quota,
+                    account: {
+                        ...result.quota.account,
+                        login: result.quota.account.keyName ?? "Command Code",
+                    },
+                }),
+            };
+        },
+    });
 }

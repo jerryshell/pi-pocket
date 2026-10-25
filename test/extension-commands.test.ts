@@ -178,7 +178,11 @@ test("a failed reload keeps the commands, and turning the module off takes them 
 
     writeFileSync(join(app.dataDir, "extensions", FILE), MODULE);
     await app.setExtensionEnabled(owner(app), FILE, false);
-    assert.deepEqual(app.webs.commands(), []);
+    // Built-in modules keep theirs; the drop-in's are gone.
+    assert.deepEqual(
+        app.webs.commands().filter((each) => each.name.startsWith("count")),
+        [],
+    );
 
     const id = await newSession(app);
 
