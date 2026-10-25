@@ -59,6 +59,7 @@ const ORDER = [
     "triggers.ts",
     "gallery.ts",
     "session-tags.ts",
+    "ask-someone.ts",
 ];
 
 /** The built-in modules' names (their files' without `.ts`): a drop-in with one of them is never loaded. */
@@ -73,6 +74,7 @@ const OFF_BY_DEFAULT = new Set([
     "agent-teams.ts",
     "anthropic-subscription.ts",
     "session-tags.ts",
+    "ask-someone.ts",
 ]);
 const TITLES: Record<string, string> = {
     "prompt.ts": "System prompt",
@@ -91,6 +93,7 @@ const TITLES: Record<string, string> = {
     "triggers.ts": "Triggers",
     "gallery.ts": "Extension gallery",
     "session-tags.ts": "Session tags",
+    "ask-someone.ts": "Ask someone",
 };
 
 /**
@@ -126,6 +129,7 @@ export const BUILT_IN_TOOLS: ReadonlySet<string> = new Set([
     "watch_pr",
     "repo_watch",
     "session_watch_pr",
+    "ask_someone",
 ]);
 
 /** Pi Pocket's own modules, or the owner's from the drop-in folder. */
@@ -155,9 +159,18 @@ export interface ExtensionInfo {
     }[];
     /**
      * What it adds to the app: its routes (`GET status`), who loads its browser module, when it has one, the widest
-     * access of the two, and its commands (`conversation /name`, `global /name`).
+     * access of the two, its commands (`conversation /name`, `global /name`), and whether it draws pages for anyone with
+     * one of its public links.
      */
-    web?: { routes: string[]; client?: WebAccess; access?: WebAccess; commands?: string[] };
+    web?: {
+        routes: string[];
+        client?: WebAccess;
+        access?: WebAccess;
+        commands?: string[];
+        publicPage?: boolean;
+        service?: boolean;
+        settings?: boolean;
+    };
     /** Why the module is not loaded, when it failed. */
     error?: string;
 }
