@@ -679,7 +679,8 @@ The host has more members, for Pi Pocket's built-in modules only. They are not i
 
 - `approvals`: tool calls that wait for a person to allow them.
 - `guard`: Lancet Guard.
-- `schedules`: scheduled messages, for the schedule tool.
+- `schedules`: scheduled messages, for the schedule tool. `schedules.limits` holds the limits in force (`perSession`, `chars`, `repeatMinutes`, `aheadDays`); the schedules module copies the owner's settings into it, so a module should read it and not change it. A server from before 0.24.0 has no `limits`.
+- `background`: commands Pi runs in the background, for the background tool: `start`, `read`, `stop`, `list`, and `limits` (`running`, which the background module copies from the owner's setting). A server from before 0.24.0 has none.
 - `goals`: Done when, for the goals module.
 - `browsers`: the built-in browser, for the browser tool.
 - `memory`: the lessons that Pi keeps across sessions, for the memory tool.
@@ -688,3 +689,4 @@ The host has more members, for Pi Pocket's built-in modules only. They are not i
 - `pip`: what the tools of PiP, the owner's assistant, do.
 - `pipCompaction`: PiP's own summaries when its context is compacted.
 - `gallery`: the extension gallery, for its own routes.
+- `updates`: updates of Pi Pocket itself, for the Updates module's routes.
