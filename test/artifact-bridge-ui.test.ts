@@ -347,17 +347,19 @@ test(
 test("its saved state comes back when it opens again", real, async () => {
     await closeSheet();
     await setBox("");
+    // The count before this open: the page saves it plus one, which also says the page has started and hears taps.
+    const before = ((await savedFor("calc")) as { count: number } | undefined)?.count ?? 0;
+
     await openViewer("calc");
     await until(
         async () =>
-            (await savedFor("calc")) !== undefined &&
-            ((await savedFor("calc")) as { count: number }).count === 2,
+            ((await savedFor("calc")) as { count: number } | undefined)?.count === before + 1,
         "the count saved again",
         SLOW,
     );
     await tapFrame(".viewer iframe");
     await until(
-        async () => (await boxText()).includes("option 2"),
+        async () => (await boxText()).includes(`option ${before + 1}`),
         "the second open's follow-up",
         SLOW,
     );
