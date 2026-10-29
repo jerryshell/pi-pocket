@@ -1,7 +1,7 @@
 # Command Code provider
 
 Vendored from [`patlux/pi-commandcode-provider`](https://github.com/patlux/pi-commandcode-provider)
-0.7.10 (commit `63c8e5c`), under the MIT license in `LICENSE`.
+0.7.11 (commit `f4ab05c`), under the MIT license in `LICENSE`.
 
 Copied: `models.ts` (the catalog, its cache, each model's wire and thinking levels),
 `oauth.ts` and `auth-server.ts` (sign-in, and the local callback the browser flow posts

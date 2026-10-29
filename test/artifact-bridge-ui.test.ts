@@ -357,6 +357,8 @@ test("its saved state comes back when it opens again", real, async () => {
         "the count saved again",
         SLOW,
     );
+    // Let the viewer finish opening before the tap, as the first open does above.
+    await new Promise((resolve) => setTimeout(resolve, 500));
     await tapFrame(".viewer iframe");
     await until(
         async () => (await boxText()).includes(`option ${before + 1}`),
