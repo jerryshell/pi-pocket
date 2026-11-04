@@ -1,0 +1,24 @@
+/* Loop's sheet: the aim on a line of its own, and the one button that ends the loop. */
+.loop-sheet {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.loop-sheet p {
+    margin: 0;
+}
+
+.loop-sheet-goal {
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-control);
+    background: var(--bg);
+    color: var(--text);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.loop-sheet-problem {
+    color: var(--err);
+}
