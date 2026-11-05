@@ -20,7 +20,7 @@ export interface TemporaryPricing {
 }
 
 export const PRICING_SOURCE_URL = "https://commandcode.ai/docs/resources/pricing-limits";
-export const PRICING_LAST_VERIFIED = "2026-10-28";
+export const PRICING_LAST_VERIFIED = "2026-11-04";
 
 export const ZERO_MODEL_COST: CommandCodeModelCost = {
     input: 0,
@@ -39,6 +39,8 @@ export const ZERO_MODEL_COST: CommandCodeModelCost = {
  */
 export const MODEL_COSTS: Readonly<Record<string, CommandCodeModelCost>> = {
     // Free models
+    // Free while the stealth preview lasts; no fixed expiry is published.
+    "stealth/crouton-alpha": { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     "poolside/laguna-s-2.1-free": { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     "stealth/glyph-cluster:free": { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     // Free while capacity lasts; no fixed expiry is published.
@@ -46,6 +48,12 @@ export const MODEL_COSTS: Readonly<Record<string, CommandCodeModelCost>> = {
 
     // Open and open-weight models
     "ornith/ornith-1.5-122b": { input: 0.16, output: 0.64, cacheRead: 0.02, cacheWrite: 0 },
+    "inclusionai/ling-3.1-flash-1019": {
+        input: 0.3,
+        output: 0.9,
+        cacheRead: 0.06,
+        cacheWrite: 0,
+    },
     "inclusionai/ling-3.1-flash": { input: 0.3, output: 0.9, cacheRead: 0.06, cacheWrite: 0 },
     "mistral/mistral-large-4": { input: 1.36, output: 4.18, cacheRead: 0.14, cacheWrite: 0 },
     "tencent/hy3-paid": { input: 0.14, output: 0.58, cacheRead: 0.035, cacheWrite: 0 },
@@ -381,6 +389,5 @@ export const MODEL_COSTS: Readonly<Record<string, CommandCodeModelCost>> = {
     },
 };
 
-// No dated promotions are active. Add an entry here when the pricing page
-// publishes a promotion end date, so tests fail when it needs review.
+// Dated promotions only; remove an entry when the model leaves the API.
 export const TEMPORARY_PRICING: readonly TemporaryPricing[] = [];

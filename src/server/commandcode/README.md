@@ -1,7 +1,7 @@
 # Command Code provider
 
 Vendored from [`patlux/pi-commandcode-provider`](https://github.com/patlux/pi-commandcode-provider)
-0.7.11 (commit `f4ab05c`), under the MIT license in `LICENSE`.
+0.7.12 (commit `0f568ff`), under the MIT license in `LICENSE`.
 
 Copied: `models.ts` (the catalog, its cache, each model's wire and thinking levels),
 `oauth.ts` and `auth-server.ts` (sign-in, and the local callback the browser flow posts
@@ -32,3 +32,7 @@ Pi Pocket adapts it in `../extensions/commandcode.ts`:
 Not included: the `/alpha/generate` fallback, the Responses stream normalization, the
 `/commandcode-refresh` and `/commandcode-status` commands (the Providers sheet has the
 refresh), and the request-time DeepSeek peak rates (Pi shows the table's rates).
+
+The sign-in checks the callback's origin and state as 0.7.12 does (no local development
+origin, and only the page that holds the state token can settle a login, errors included),
+and validates a pasted key against `COMMANDCODE_API_BASE` within 15 seconds.
