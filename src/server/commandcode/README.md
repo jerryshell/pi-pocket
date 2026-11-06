@@ -30,7 +30,11 @@ Pi Pocket adapts it in `../extensions/commandcode.ts`:
 - The sign-in asks first: paste an API key, or the provider's browser flow, which needs a
   browser on the server's machine because its callback is a local port.
 - The catalog refreshes from Menu → Providers → **Refresh models**; the last good catalog
-  stays at `<agent-dir>/commandcode-models.json`.
+  stays at `<agent-dir>/commandcode-models.json`. A refresh also forgets which path the key
+  took, so an account that changed plan asks the Provider API again instead of keeping the
+  fallback until it changes keys or restarts. Upstream's `/commandcode-refresh` does the same.
+- The usage sheet and `/commandcode-quota` say where the account's requests go: the Provider
+  API, the Go fallback (`/alpha/generate`), or not tried since the last refresh or restart.
 - `/commandcode-quota` (the owner's) reads `/alpha/whoami`, `billing/credits`,
   `billing/subscriptions`, and `usage/summary`, and shows them as a card. The card leaves
   out the account's login, because everyone in the session sees it.

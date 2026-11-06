@@ -28,7 +28,10 @@ import { join } from "node:path";
 import { getConfiguredApiKey } from "../commandcode/api-key.ts";
 import { calculateCommandCodeCost } from "../commandcode/generate/cost.ts";
 import { createStreamCommandCode } from "../commandcode/generate/core.ts";
-import { createCommandCodeTransportRouter } from "../commandcode/generate/router.ts";
+import {
+    type CommandCodeTransport,
+    createCommandCodeTransportRouter,
+} from "../commandcode/generate/router.ts";
 import type {
     AssistantMessageEventStreamLike as GenerateStream,
     ContextLike as GenerateContext,
@@ -103,6 +106,8 @@ interface UsageView {
         resetAt: number | null;
     }[];
     unavailable: string[];
+    /** Where the account's last request went: the Provider API, or the Go fallback. */
+    transport: CommandCodeTransport;
 }
 
 /** The provider's base URL without its provider path: the account's own endpoints sit beside it. */
@@ -335,6 +340,9 @@ export default async function createCommandCode(
             }
 
             catalog = loaded.models;
+            // An account whose plan changed answers the Provider API now, so the next request asks it again:
+            // without this, a Go account that upgraded would keep the fallback until it changed keys or restarted.
+            router.reset();
 
             return catalog.map((model) => modelConfig(model, apiBase));
         },
@@ -414,6 +422,7 @@ export default async function createCommandCode(
                 resetAt: limit.resetAt,
             })),
             unavailable: [...(quota.unavailable ?? [])],
+            transport: router.getTransport(),
         };
     };
 
@@ -427,8 +436,8 @@ export default async function createCommandCode(
             );
         }
 
-        // `readQuota` stored the view of the answer it gave, cached or new.
-        return asked!.view;
+        // `readQuota` stored the view of the answer it gave, cached or new; the transport is the one now.
+        return { ...asked!.view, transport: router.getTransport() };
     };
 
     // The owner's alone: the menu row, its sheet, and this route are not there for anyone else.
@@ -459,13 +468,16 @@ export default async function createCommandCode(
 
             return {
                 type: "card",
-                output: formatQuota({
-                    ...result.quota,
-                    account: {
-                        ...result.quota.account,
-                        login: result.quota.account.keyName ?? "Command Code",
+                output: formatQuota(
+                    {
+                        ...result.quota,
+                        account: {
+                            ...result.quota.account,
+                            login: result.quota.account.keyName ?? "Command Code",
+                        },
                     },
-                }),
+                    { transport: router.getTransport() },
+                ),
             };
         },
     });

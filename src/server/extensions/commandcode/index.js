@@ -5,6 +5,12 @@ export const pocketApi = 2;
 const USAGE_URL = "https://commandcode.ai/usage";
 const REFRESH_MS = 5 * 60_000;
 const WINDOW_LABELS = { fiveHour: "5-hour", weekly: "Weekly" };
+/** Where the account's requests go: the Provider API its plan entitles, or Command Code's Go fallback. */
+const TRANSPORT_LABELS = {
+    provider: "Provider API",
+    generate: "Go fallback (/alpha/generate)",
+    unknown: "not tried yet",
+};
 
 /** `$12.40`; an absent number reads as zero. */
 function money(value) {
@@ -169,6 +175,9 @@ export default function setup(pocket) {
                                 </div>`,
                         )}
                     </div>
+                    <p class="muted small">
+                        Requests: ${TRANSPORT_LABELS[usage.transport] ?? TRANSPORT_LABELS.unknown}
+                    </p>
                     ${
                         usage.unavailable.length > 0 &&
                         html`<p class="muted small">

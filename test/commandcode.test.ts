@@ -309,6 +309,14 @@ test("a call streams through Pi's own transport, and the Go plan falls back to t
         calls.some((call) => call.path === "/alpha/generate"),
         "the request went to the generate endpoint",
     );
+
+    const usage = await call(app.config.ownerToken, "/api/x/commandcode/usage");
+
+    assert.equal(
+        (usage.data as { transport?: string }).transport,
+        "generate",
+        "the sheet says where the account's requests go",
+    );
     goPlan = false;
 });
 
@@ -324,6 +332,12 @@ test("a refresh replaces the catalog from the endpoint, and writes it to the cac
     );
     assert.equal(app.models.getModel("commandcode", "gpt-6-luna")?.api, "commandcode");
     assert.equal(app.models.getModel("commandcode", "claude-opus-5")?.api, "commandcode");
+
+    assert.equal(
+        (await call(app.config.ownerToken, "/api/x/commandcode/usage")).data.transport,
+        "unknown",
+        "a refresh makes the next request ask the Provider API again",
+    );
 
     const cached = JSON.parse(await (await import("node:fs/promises")).readFile(cachePath, "utf8"));
 
@@ -354,6 +368,7 @@ test("/commandcode-quota shows the account's credits, and never its login", asyn
     assert.match(output, /Credits/);
     assert.match(output, /5-hour/);
     assert.match(output, /Usage windows/);
+    assert.match(output, /Requests/, "the card says where the requests go");
     assert.ok(!output.includes("person@example.com"), "the account's login stays out of the card");
     assert.ok(
         calls.some(

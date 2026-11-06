@@ -1,3 +1,4 @@
+import type { CommandCodeTransport } from "./generate/router.ts";
 import type {
     CommandCodeCredits,
     CommandCodeQuota,
@@ -136,7 +137,24 @@ function formatTokens(tokens: number): string {
     return String(tokens);
 }
 
-export function formatQuota(quota: CommandCodeQuota, now: () => number = Date.now): string {
+/** Where the account's last request went, in the card's words. */
+function transportLine(transport: CommandCodeTransport): string {
+    if (transport === "provider") {
+        return "Provider API (the plan's own access)";
+    }
+
+    if (transport === "generate") {
+        return "Go fallback: /alpha/generate (this plan has no Provider API access)";
+    }
+
+    return "Not tried since the last refresh or restart";
+}
+
+export function formatQuota(
+    quota: CommandCodeQuota,
+    options: { now?: () => number; transport?: CommandCodeTransport } = {},
+): string {
+    const now = options.now ?? Date.now;
     const lines: string[] = [];
     const remaining = quota.credits?.remainingCredits ?? 0;
     const spent = quota.summary?.totalCost ?? 0;
@@ -180,6 +198,12 @@ export function formatQuota(quota: CommandCodeQuota, now: () => number = Date.no
         lines.push("");
         lines.push("Usage windows:");
         lines.push(...formatWindowLimits(limits, now).map((line) => `  ${line}`));
+    }
+
+    if (options.transport !== undefined) {
+        lines.push("");
+        lines.push("Requests");
+        lines.push(`  ${transportLine(options.transport)}`);
     }
 
     if ((quota.unavailable?.length ?? 0) > 0) {
