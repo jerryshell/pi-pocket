@@ -119,3 +119,43 @@ export function getConfiguredApiKey(options: ApiKeyLookupOptions = {}): string |
 
     return undefined;
 }
+
+/** The literal names a host may hand over as its "resolved" key, instead of the credential itself. */
+const PLACEHOLDERS = new Set([
+    "$COMMAND_CODE_API_KEY",
+    "COMMAND_CODE_API_KEY",
+    "$COMMANDCODE_API_KEY",
+    "COMMANDCODE_API_KEY",
+]);
+
+function usableApiKey(value: string | undefined): string | undefined {
+    const trimmed = typeof value === "string" ? value.trim() : undefined;
+
+    if (!trimmed || PLACEHOLDERS.has(trimmed)) {
+        return undefined;
+    }
+
+    return trimmed;
+}
+
+/** The real key: the host's value, else the one configured here, and never a placeholder or a blank. */
+export function pickCommandCodeApiKey(
+    registryKey: string | undefined,
+    hostKey: string | undefined,
+): string | undefined {
+    return usableApiKey(registryKey) ?? usableApiKey(hostKey);
+}
+
+/** The call's options with the host's placeholder (or a missing key) replaced by the one configured here. */
+export function withResolvedCommandCodeApiKey<T extends { apiKey?: string }>(
+    options: T | undefined,
+    configuredKey: string | undefined,
+): T | { apiKey?: string } {
+    const apiKey = pickCommandCodeApiKey(options?.apiKey, configuredKey);
+
+    if (options && apiKey === options.apiKey) {
+        return options;
+    }
+
+    return { ...options, apiKey };
+}

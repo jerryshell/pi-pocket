@@ -31,7 +31,11 @@ import {
 import { isContextOverflow } from "@earendil-works/pi-ai/utils/overflow";
 import { classify, type ResponseFacts, responseFacts, type Scope, type Source } from "./limits.ts";
 
-/** The adapters that send their requests through `options.fetch`, so the status and headers of a failure can be seen. */
+/**
+ * The adapters that send their requests through `options.fetch`, so the status and headers of a failure can be seen.
+ * `commandcode` is Command Code's own api (`extensions/commandcode.ts`): one stream that hands the request to one of
+ * these, or to the account's generate endpoint when the Provider API refuses the plan.
+ */
 const RECORDS_FETCH = new Set([
     "anthropic-messages",
     "openai-completions",
@@ -40,6 +44,7 @@ const RECORDS_FETCH = new Set([
     "openai-codex-responses",
     "mistral-conversations",
     "pi-messages",
+    "commandcode",
 ]);
 
 /** A request made with this in its options never waits: it fails as it would without the gate (titles, summaries). */

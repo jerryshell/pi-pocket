@@ -4,11 +4,36 @@
  *
  * Vendored from `patlux/pi-commandcode-provider` (`src/server/commandcode/`): the catalog, its cache, the sign-in,
  * and the account's endpoints. Streaming goes through Pi's own OpenAI Chat Completions, OpenAI Responses, and
- * Anthropic Messages transports, which the catalog chooses for each model.
+ * Anthropic Messages transports, which the catalog chooses for each model; an account the Provider API refuses (the
+ * Go plan) is served by Command Code's own `/alpha/generate` endpoint instead, whose client lives beside the rest.
  */
 import type { ProviderConfig } from "@earendil-works/pi-coding-agent";
+import {
+    type Api,
+    type AssistantMessageEventStream,
+    createAssistantMessageEventStream,
+    getCurrentSystemPrompt,
+    getCurrentTools,
+    type Model,
+    type SimpleStreamOptions,
+    type TranscriptContext,
+} from "@earendil-works/pi-ai";
+import {
+    registerApiProvider,
+    streamSimple as streamNative,
+    unregisterApiProviders,
+} from "@earendil-works/pi-ai/compat";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { getConfiguredApiKey } from "../commandcode/api-key.ts";
+import { calculateCommandCodeCost } from "../commandcode/generate/cost.ts";
+import { createStreamCommandCode } from "../commandcode/generate/core.ts";
+import { createCommandCodeTransportRouter } from "../commandcode/generate/router.ts";
+import type {
+    AssistantMessageEventStreamLike as GenerateStream,
+    ContextLike as GenerateContext,
+    StreamOptions as ClientOptions,
+} from "../commandcode/generate/types.ts";
 import {
     baseUrlForModel,
     DEFAULT_MODELS_URL,
@@ -45,6 +70,21 @@ type OAuthLogin = Parameters<NonNullable<ProviderConfig["oauth"]>["login"]>[0];
 
 /** How long one answer of the account's endpoints serves the menu and the sheet. */
 const QUOTA_FRESH_MS = 30_000;
+
+/** Pi's name for Command Code's own api: one stream that picks each model's wire, and the fallback, per request. */
+const COMMAND_CODE_API = "commandcode";
+
+/** The name Pi's api registry keeps these streams under, so a model's `api` is one the host can find on its own. */
+const COMMAND_CODE_SOURCE = "pi-pocket-commandcode";
+
+/** The wire a model the catalog no longer lists travels on: the one every non-Claude model serves. */
+const DEFAULT_WIRE: CommandCodeModel["api"] = "openai-completions";
+
+/**
+ * Each model's real wire, by model id. Models register under `COMMAND_CODE_API`, because Pi only takes an extension's
+ * own stream for a model whose api is the provider's: this is what the stream hands Pi's own transport instead.
+ */
+const wires = new Map<string, CommandCodeModel["api"]>();
 
 /** What the menu's hint and the sheet read: the numbers, for the browser to format. */
 interface UsageView {
@@ -122,10 +162,12 @@ function modelConfig(model: CommandCodeModel, apiBase: string): ChatModelConfig 
     const metadata = thinkingMetadataForModel(model.id);
     const cost = MODEL_COSTS[model.id] ?? ZERO_MODEL_COST;
 
+    wires.set(model.id, model.api);
+
     return {
         id: model.id,
         name: displayName(model),
-        api: model.api,
+        api: COMMAND_CODE_API,
         baseUrl: baseUrlForModel(apiBase, model.api),
         reasoning: model.reasoning,
         ...(metadata === undefined ? {} : { thinkingLevelMap: metadata.thinkingLevelMap }),
@@ -205,12 +247,71 @@ export default async function createCommandCode(
     // Menu → Providers → Refresh models fetches the catalog over the network.
     let catalog: readonly CommandCodeModel[] = await loadCachedCommandCodeModels(cachePath);
 
+    /**
+     * Pi's event stream, which the client's narrower protocol describes: the two differ only in how a tool call's
+     * arguments are typed, and those are JSON on the wire either way.
+     */
+    const createStream = (): GenerateStream =>
+        createAssistantMessageEventStream() as unknown as GenerateStream;
+
+    /**
+     * Command Code's own client for `/alpha/generate`. The Go plan has no Provider API access, so an account on it
+     * gets `403 upgrade_required`; this endpoint is what serves that account. Upstream 0.7.12 shipped it and 0.8.0
+     * removed it, so the copy under `commandcode/generate/` stays to keep Go working here.
+     */
+    const generateStream = createStreamCommandCode({
+        createStream,
+        calculateCost: calculateCommandCodeCost,
+        apiBase: accountApiBase(apiBase),
+        authPaths: [join(host.agentDir, "auth.json")],
+        env: process.env,
+        cwd: () => process.cwd(),
+        homeDir: homedir,
+    });
+
+    /** Pi's transcript as the generate client reads it: the prompt and tools replayed out of the system messages. */
+    const generateContext = (context: TranscriptContext): GenerateContext => ({
+        messages: context.messages,
+        systemPrompt: getCurrentSystemPrompt(context.messages),
+        tools: getCurrentTools(context.messages),
+    });
+
+    /** One request: Pi's transport for the model's wire, and the generate endpoint when the account has no API access. */
+    const router = createCommandCodeTransportRouter<Model<Api>, TranscriptContext>({
+        createStream,
+        streamProvider: (model, context, options) =>
+            streamNative(
+                { ...model, api: wires.get(model.id) ?? DEFAULT_WIRE },
+                context,
+                options as SimpleStreamOptions | undefined,
+            ) as unknown as GenerateStream,
+        streamGenerate: (model, context, options) =>
+            generateStream(model, generateContext(context), options),
+    });
+
+    /**
+     * One request, as Pi's provider config and api registry take it. The stream is Pi's own, from
+     * `createAssistantMessageEventStream`, so the cast puts back the type the client's protocol narrowed.
+     */
+    const piStream = (
+        model: Model<Api>,
+        context: TranscriptContext,
+        options?: SimpleStreamOptions,
+    ): AssistantMessageEventStream =>
+        router.stream(
+            model,
+            context,
+            options as ClientOptions | undefined,
+        ) as unknown as AssistantMessageEventStream;
+
     const config: ProviderConfig = {
         name: "Command Code",
+        api: COMMAND_CODE_API,
         baseUrl: apiBase,
         // A stored sign-in wins; this lets an owner keep the key in the server's environment instead.
         apiKey: "$COMMAND_CODE_API_KEY",
         ...(headers === undefined ? {} : { headers }),
+        streamSimple: (model, context, options) => piStream(model, context, options),
         oauth: {
             name: "Command Code",
             login: commandCodeLogin,
@@ -243,6 +344,18 @@ export default async function createCommandCode(
     };
 
     web.onDispose(host.registerModelProvider("commandcode", config));
+
+    // Pi's api registry knows the api too, so a model whose `api` is Command Code's finds its stream by name.
+    registerApiProvider(
+        {
+            api: COMMAND_CODE_API,
+            stream: (model, context, options) =>
+                piStream(model, context, options as SimpleStreamOptions | undefined),
+            streamSimple: (model, context, options) => piStream(model, context, options),
+        },
+        COMMAND_CODE_SOURCE,
+    );
+    web.onDispose(() => unregisterApiProviders(COMMAND_CODE_SOURCE));
 
     // The account's endpoints cost four requests: the menu's hint and the sheet share one answer for a moment.
     let asked: { at: number; quota: CommandCodeQuota; view: UsageView } | undefined;

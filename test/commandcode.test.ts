@@ -1,6 +1,7 @@
 // The Command Code provider (`extensions/commandcode.ts`): its catalog, each model's wire, and its sign-in.
 import { type App, cleanUp, newSession, openApp, owner, root, scriptedModel } from "./helpers.ts";
 import assert from "node:assert/strict";
+import { getApiProvider } from "@earendil-works/pi-ai/compat";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
@@ -69,6 +70,38 @@ const LIVE = {
     ],
 };
 
+/** Whether the account is on the Go plan: the Provider API refuses it, and `/alpha/generate` serves it instead. */
+let goPlan = false;
+
+/** An OpenAI Chat Completions stream, as the Provider API sends one: a chunk with the text, then the finish. */
+function providerStream(text: string): string {
+    const chunk = (delta: unknown, finish: string | null, usage?: unknown): string =>
+        `data: ${JSON.stringify({
+            id: "chatcmpl-1",
+            object: "chat.completion.chunk",
+            created: 0,
+            model: "deepseek/deepseek-v4.1-flash",
+            choices: [{ index: 0, delta, finish_reason: finish }],
+            ...(usage === undefined ? {} : { usage }),
+        })}\n\n`;
+
+    return (
+        chunk({ role: "assistant", content: text }, null) +
+        chunk({}, "stop", { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 }) +
+        "data: [DONE]\n\n"
+    );
+}
+
+/** Command Code's own generate stream: its events, one `data:` line each. */
+function generateStream(text: string): string {
+    return [
+        { type: "text-delta", text },
+        { type: "finish", finishReason: "stop", totalUsage: { inputTokens: 3, outputTokens: 2 } },
+    ]
+        .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+        .join("");
+}
+
 /** The account endpoints' answers, and the sign-in each request carried. */
 const ACCOUNT: Record<string, unknown> = {
     "/alpha/whoami": {
@@ -131,6 +164,28 @@ before(async () => {
             return;
         }
 
+        // The generate endpoint serves an account the Provider API refuses, as it does on the Go plan.
+        if (path === "/alpha/generate") {
+            response.writeHead(200, { "content-type": "text/event-stream" });
+            response.end(generateStream("from generate"));
+
+            return;
+        }
+
+        if (goPlan && path.startsWith("/provider/")) {
+            response.writeHead(403, { "content-type": "application/json" });
+            response.end(JSON.stringify({ error: { code: "upgrade_required" } }));
+
+            return;
+        }
+
+        if (path === "/provider/v1/chat/completions") {
+            response.writeHead(200, { "content-type": "text/event-stream" });
+            response.end(providerStream("from provider"));
+
+            return;
+        }
+
         response.writeHead(200, { "content-type": "application/json" });
         response.end(JSON.stringify(ACCOUNT[path] ?? LIVE));
     });
@@ -164,7 +219,7 @@ after(async () => {
     cleanUp();
 });
 
-test("the cached catalog is registered with each model's own wire, sign-in, and price", () => {
+test("the cached catalog is registered on the provider's one stream, with its sign-in and price", () => {
     const provider = app.models.getProvider("commandcode");
 
     assert.ok(provider, "the provider is registered while the module is on");
@@ -177,7 +232,9 @@ test("the cached catalog is registered with each model's own wire, sign-in, and 
 
     const claude = app.models.getModel("commandcode", "claude-sonnet-5-5");
 
-    assert.equal(claude?.api, "anthropic-messages");
+    // Every model carries the provider's own api: one stream picks the model's wire, and the generate fallback, itself.
+    assert.equal(claude?.api, "commandcode");
+    assert.ok(getApiProvider("commandcode"), "Pi's api registry knows that api by name");
     assert.equal(
         claude?.name,
         "Claude Sonnet 5.5",
@@ -189,7 +246,7 @@ test("the cached catalog is registered with each model's own wire, sign-in, and 
 
     const sol = app.models.getModel("commandcode", "gpt-5.6-sol");
 
-    assert.equal(sol?.api, "openai-responses");
+    assert.equal(sol?.api, "commandcode");
     assert.equal(sol?.baseUrl, `${origin}/provider/v1`);
     assert.equal(
         (sol?.compat as { supportsDeveloperRole?: boolean })?.supportsDeveloperRole,
@@ -206,12 +263,53 @@ test("the cached catalog is registered with each model's own wire, sign-in, and 
 
     const flash = app.models.getModel("commandcode", "deepseek/deepseek-v4.1-flash");
 
-    assert.equal(flash?.api, "openai-completions");
+    assert.equal(flash?.api, "commandcode");
     assert.equal(
         (flash?.compat as { supportsReasoningEffort?: boolean })?.supportsReasoningEffort,
         true,
     );
     assert.ok((flash?.cost.input ?? 0) > 0);
+});
+
+/** The text a model call streams back, read from the events Pi's own runtime gives. */
+async function streamText(
+    model: NonNullable<ReturnType<App["models"]["getModel"]>>,
+): Promise<string> {
+    const context = {
+        messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+    };
+    const stream = app.models.streamSimple(model, context as never, {
+        sessionId: crypto.randomUUID(),
+    });
+    let text = "";
+
+    for await (const event of stream) {
+        if (event.type === "text_delta") {
+            text += event.delta;
+        }
+    }
+
+    return text;
+}
+
+test("a call streams through Pi's own transport, and the Go plan falls back to the generate endpoint", async () => {
+    const model = app.models.getModel("commandcode", "deepseek/deepseek-v4.1-flash");
+
+    assert.ok(model);
+    assert.equal(
+        await streamText(model),
+        "from provider",
+        "an entitled account uses the Provider API",
+    );
+
+    // The same key, on a plan without API access: Command Code refuses it, and its own endpoint answers.
+    goPlan = true;
+    assert.equal(await streamText(model), "from generate");
+    assert.ok(
+        calls.some((call) => call.path === "/alpha/generate"),
+        "the request went to the generate endpoint",
+    );
+    goPlan = false;
 });
 
 test("a refresh replaces the catalog from the endpoint, and writes it to the cache", async () => {
@@ -224,8 +322,8 @@ test("a refresh replaces the catalog from the endpoint, and writes it to the cac
         undefined,
         "the old one is gone",
     );
-    assert.equal(app.models.getModel("commandcode", "gpt-6-luna")?.api, "openai-responses");
-    assert.equal(app.models.getModel("commandcode", "claude-opus-5")?.api, "anthropic-messages");
+    assert.equal(app.models.getModel("commandcode", "gpt-6-luna")?.api, "commandcode");
+    assert.equal(app.models.getModel("commandcode", "claude-opus-5")?.api, "commandcode");
 
     const cached = JSON.parse(await (await import("node:fs/promises")).readFile(cachePath, "utf8"));
 
