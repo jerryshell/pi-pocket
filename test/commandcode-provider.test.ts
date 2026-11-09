@@ -72,8 +72,8 @@ function close(auth: { server: { listening: boolean; close: () => unknown } }): 
     }
 }
 
-test("the prices carry the stealth preview, and the dated Ling preview's list rates", () => {
-    assert.equal(PRICING_LAST_VERIFIED, "2026-11-04");
+test("the prices carry the stealth preview, the dated Ling preview's list rates, and the ultrafast model's single rate", () => {
+    assert.equal(PRICING_LAST_VERIFIED, "2026-11-09");
     assert.deepEqual(MODEL_COSTS["stealth/crouton-alpha"], {
         input: 0,
         output: 0,
@@ -90,6 +90,17 @@ test("the prices carry the stealth preview, and the dated Ling preview's list ra
         MODEL_COSTS["inclusionai/ling-3.1-flash-1019:free"],
         undefined,
         "the retired free entry is gone",
+    );
+    assert.deepEqual(MODEL_COSTS["deepseek/deepseek-v4.1-flash-ultrafast"], {
+        input: 2.4,
+        output: 9.6,
+        cacheRead: 0.048,
+        cacheWrite: 0,
+    });
+    assert.equal(
+        MODEL_COSTS["poolside/laguna-s-2.1-free"],
+        undefined,
+        "the retired free poolside entry is gone",
     );
 });
 

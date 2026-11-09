@@ -2,7 +2,7 @@
 
 Vendored from [`patlux/pi-commandcode-provider`](https://github.com/patlux/pi-commandcode-provider),
 under the MIT license in `LICENSE`. The catalog, the sign-in, and the account's endpoints are
-upstream 0.8.0 (commit `d779459`); `generate/` is upstream 0.7.12 (commit `0f568ff`), where the
+upstream 0.8.1 (commit `e8ebc6e`); `generate/` is upstream 0.7.12 (commit `0f568ff`), where the
 `/alpha/generate` client still shipped.
 
 Copied: `models.ts` (the catalog, its cache, each model's wire and thinking levels),
@@ -10,7 +10,7 @@ Copied: `models.ts` (the catalog, its cache, each model's wire and thinking leve
 back to), `api-key.ts` (the stored key), `pricing.ts` (display prices),
 `commandcode-catalog.ts` with `commandcode-catalog-overrides.ts` (Pi's image input,
 reasoning, and output limits per model, from Command Code's CLI catalog at
-`command-code@1.88.3`), and `quota.ts`, `quota-format.ts` and `quota-types.ts` (the
+`command-code@1.88.5`), and `quota.ts`, `quota-format.ts` and `quota-types.ts` (the
 account's credits and usage windows, with `overflow.ts` for its error text).
 
 Pi Pocket adapts it in `../extensions/commandcode.ts`:
