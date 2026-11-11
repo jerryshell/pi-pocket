@@ -30,10 +30,10 @@ Then, before you say that the change is done:
 npm run format   # Prettier and ESLint's fixes
 npm run lint
 npm run check    # TypeScript
-npm test         # every test; the browser tests need Chromium
+npm test         # every test; the browser tests need Chromium; over half an hour
 ```
 
-`npm test` takes a few minutes. While you work, run the tests of the part that you changed (`node --test test/<name>.test.ts`). Run all of them before you say that the change is done, or before you ask for a restart. If you do not run a check, say which.
+`npm test` is the slow one: over half an hour for the whole suite. While you work, run the tests of the part that you changed (`node --test test/<name>.test.ts`). Run all of them before you say that the change is done, or before you ask for a restart. The one exception is merging a patch release from upstream (`git diff --name-only v0.28.1 v0.28.2 -- test/`): there, `npm run check`, `npm run lint`, and the tests the release touches are enough, since most of what it changes is version strings. If you do not run a check, say which.
 
 Keep [map.md](map.md), [architecture.md](architecture.md), and [features.md](features.md) true. When a change moves code, adds a dependency between parts, or changes what people see, update them in the same change.
 
