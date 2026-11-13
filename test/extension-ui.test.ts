@@ -1124,7 +1124,7 @@ test(
             mathCustom: true,
         });
 
-        const updated = await withMeter<string>(`
+        await withMeter(`
         globalThis.mathHandle.update({
             mount(element, source) {
                 element.classList.add("math-updated");
@@ -1136,10 +1136,15 @@ test(
         const newline = String.fromCharCode(10);
         const text = [fence + "Pi-Test", "fence-body", fence, "", "$x+y$"].join(newline);
         render(pocket.h(pocket.Markdown, { text }), globalThis.markdownTestHost);
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        const updated = globalThis.markdownTestHost.querySelector(".math-updated");
 
-        return JSON.stringify(updated?.dataset.source ?? null);
+        return "null";
+    `);
+
+        // The mount runs after Preact draws: wait for it, not for a time, which a loaded machine can need more of (this
+        // test runs beside the rest of the suite).
+        await until(() => has(".math-updated"), "an updated math renderer to remount");
+        const updated = await inPage<string>(`
+        return JSON.stringify(globalThis.markdownTestHost.querySelector(".math-updated")?.dataset.source ?? null);
     `);
 
         assert.equal(updated, "x+y", "an updated math renderer remounts existing Markdown");
