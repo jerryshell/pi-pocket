@@ -32,4 +32,26 @@ The provider is vendored from [`patlux/pi-commandcode-provider`](https://github.
 
 The app asks once, then removes the session's transcript, documents, tasks, submissions, uploads, per-session spending record, and hooks or repository watches that pointed at it. It refuses a session that is working, has a worktree, or is the source of a fork. A cleanup that did not finish is retried at the next server start.
 
+**Changes across a folder of repositories.** A session's folder can hold several checkouts of their own, as `~/siluyunpay` does with a dozen projects, and Changes now reviews each of them:
+
+- the folder gets a row of chips, one for each repository right under it, with how many files changed in it, and the review shows the one picked, which this browser remembers for the session; the count in the top bar covers them all;
+- the rest is as for one repository: the file tree, the filter, **π only**, viewed marks, side by side or unified diffs, and ↺ to put a file back;
+- the list is one folder deep, without hidden folders or `node_modules`, at most 20 of them, kept for three seconds;
+- a folder that is itself in a repository reads as before, and so does one with no repository under it.
+
+**History: a repository's commits, and what each changed.** A **History** button in Changes shows the commits of the repository it reviews, where the review shows what is not committed yet:
+
+- newest first, each with its short hash, subject, author, and when: up to 50, on the branch it has checked out;
+- a commit opens its own diff under its row, every file it touched, in the same viewer as Changes;
+- the repository chips stay, so a folder of checkouts shows each one's history in turn;
+- a clean repository has nothing to review but its history, which is where this is useful.
+
+**A browser page that closes after use.** Pi's `browser` tool left its page open for half an hour after the last use, and the Chromium behind it for five minutes more:
+
+- the end of Pi's run now closes the page it opened, unless a tab is watching it or a person used it in the panel: a page may hold a sign-in or a half-filled form, and those are theirs to come back to;
+- the tool takes `close`, for a page it is done with before the run ends;
+- the browser stops a minute after its last page closed, not five, and the next page starts it again in a moment.
+
+Turn the browser off in Menu → Extensions like any module.
+
 Everything else is upstream's. Use the [upstream repository](https://github.com/TannerMidd/pi-pocket) for the original project, documentation, and releases.
