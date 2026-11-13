@@ -14390,10 +14390,54 @@ textarea.notes {
 
 .cm-row {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 2px 10px;
+    width: 100%;
     padding: 8px 10px;
+    border: 0;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+}
+
+.cm-row.open {
+    background: var(--card-2);
+}
+
+.cm-row svg {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    align-self: center;
+    color: var(--faint);
+}
+
+@media (hover: hover) {
+    button.cm-row:hover {
+        background: var(--card);
+    }
+}
+
+.cm-item {
     border-bottom: 1px solid var(--hair);
+}
+
+/* What a commit changed, under its row: the same viewer as the review's, one file at a time. */
+.cm-diff {
+    padding: 4px 0 10px;
+}
+
+.cm-diff-sum {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.cm-diff-sum strong {
+    color: var(--text);
+    font-weight: 500;
 }
 
 .cm-hash {

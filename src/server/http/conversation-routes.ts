@@ -556,6 +556,17 @@ export async function conversationRoutes(
         return json(response, 200, { commits });
     }
 
+    if (third === "commits" && fourth === "diff" && method === "GET") {
+        const repo = url.searchParams.get("repo") || undefined;
+
+        return send(
+            response,
+            200,
+            await app.workspace.commitDiff(id, user, url.searchParams.get("commit") ?? "", repo),
+            "text/plain; charset=utf-8",
+        );
+    }
+
     // What an artifact's page saved for this person (`artifact-state.ts`): anyone who sees the session keeps their own.
     if (third === "artifact-state" && fourth !== undefined && parts.length === 4) {
         if (method === "GET") {

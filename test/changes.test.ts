@@ -369,4 +369,17 @@ test("a folder's repositories show their own commits, newest first", async () =>
     const [only] = await app.workspace.commits(id, owner(app), "one", 1);
 
     assert.equal(only?.subject, "second", "a look may ask for fewer");
+
+    // A commit opens what it changed, and only a commit of this repository.
+    const diff = await app.workspace.commitDiff(id, owner(app), commits[0]!.hash, "one");
+
+    assert.match(diff, /^diff --git a\/a\.txt b\/a\.txt$/m);
+    assert.match(diff, /^\+more$/m);
+    await assert.rejects(app.workspace.commitDiff(id, owner(app), "--output=/tmp/x", "one"), {
+        status: 404,
+    });
+    await assert.rejects(
+        app.workspace.commitDiff(id, owner(app), "0123456789abcdef0123456789abcdef01234567", "one"),
+        { status: 404 },
+    );
 });

@@ -498,6 +498,32 @@ export async function diffOf(cwd: string, path: string, onlyHere = false): Promi
 }
 
 /**
+ * What one commit changed, as `git show` writes it: every file's diff, against the commit before it. Only a commit
+ * of this repository, named by its id alone: no other revision, and nothing git could read as an option.
+ */
+export async function commitDiffIn(cwd: string, commit: string): Promise<string> {
+    if (!/^[0-9a-f]{7,64}$/.test(commit)) {
+        throw new Error("That is not a commit id");
+    }
+
+    const root = (await git(cwd, ["rev-parse", "--show-toplevel"])).trim();
+    const known = await git(root, ["rev-parse", "--verify", "--quiet", `${commit}^{commit}`]).then(
+        () => true,
+        () => false,
+    );
+
+    if (!known) {
+        throw new Error("That commit is not in this repository");
+    }
+
+    const diff = await git(root, ["show", "--format=", "--patch", "-U3", ...DIFF_FLAGS, commit]);
+
+    return diff.length > MAX_DIFF
+        ? `${diff.slice(0, MAX_DIFF)}\n… the rest of the diff is left out …\n`
+        : diff;
+}
+
+/**
  * Put one changed file back as the last commit has it: edits undone, a deleted file back, a new file gone. As with
  * `diffOf`, only a file git lists as changed, so the path cannot point anywhere else; with `onlyHere`, only one in
  * `cwd`. A renamed file is left alone, as undoing it changes two paths.

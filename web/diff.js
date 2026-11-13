@@ -989,6 +989,33 @@ function fetchDiff(id, path, repo) {
     });
 }
 
+/** One commit's diff, every file of it, as the server writes it: `git show`'s patch. */
+function fetchCommitDiff(id, commit, repo) {
+    const query = new URLSearchParams({ commit });
+
+    if (repo) {
+        query.set("repo", repo);
+    }
+
+    return fetch(`/api/c/${id}/commits/diff?${query}`).then(async (response) => {
+        const text = await response.text();
+
+        if (response.ok) {
+            return text;
+        }
+
+        let failure;
+
+        try {
+            failure = JSON.parse(text).error;
+        } catch {
+            // Not the server's answer (a proxy's page, say): the status says enough.
+        }
+
+        throw new Error(failure ?? `HTTP ${response.status}`);
+    });
+}
+
 /** Paths in the order the tree shows them: at each level, folders before files, each by name. */
 function treeOrder(a, b) {
     const left = a.path.split("/");
@@ -1293,8 +1320,14 @@ function RepoSwitch({ repos, scope, onPick }) {
  * The commits of the repository Changes shows, newest first: the branch it has checked out, as `git log` lists it.
  * `asked` changes with Look again, which reads them once more.
  */
+/**
+ * The commits of the repository Changes shows, newest first: the branch it has checked out, as `git log` lists it.
+ * `asked` changes with Look again, which reads them once more. A commit opens its own diff under it.
+ */
 function CommitList({ id, repo, asked }) {
     const [state, setState] = useState({ loading: true, commits: [], error: null });
+    // The commit whose diff shows, if one does: one at a time, as a phone shows one page at a time.
+    const [opened, setOpened] = useState(null);
 
     useEffect(() => {
         let live = true;
@@ -1324,11 +1357,78 @@ function CommitList({ id, repo, asked }) {
 
     return html`<div class="cm-list" role="list">
         ${state.commits.map(
-            (commit) => html`<div class="cm-row" role="listitem" key=${commit.hash}>
-                <span class="cm-hash mono">${commit.short}</span>
-                <span class="cm-subject">${commit.subject}</span>
-                <span class="cm-meta">${commit.author} · ${timeAgo(commit.at)}</span>
+            (commit) => html`<div class="cm-item" role="listitem" key=${commit.hash}>
+                <button
+                    type="button"
+                    class=${`cm-row ${opened === commit.hash ? "open" : ""}`}
+                    aria-expanded=${opened === commit.hash ? "true" : "false"}
+                    title="Show what this commit changed"
+                    onClick=${() => setOpened(opened === commit.hash ? null : commit.hash)}
+                >
+                    <span class="cm-hash mono">${commit.short}</span>
+                    <span class="cm-subject">${commit.subject}</span>
+                    <span class="cm-meta">${commit.author} · ${timeAgo(commit.at)}</span>
+                    <${Icon}
+                        name="chevron"
+                        size=${14}
+                        class=${`chev ${opened === commit.hash ? "open" : ""}`}
+                    />
+                </button>
+                ${
+                    opened === commit.hash &&
+                    html`<${CommitDiff} id=${id} repo=${repo} commit=${commit.hash} />`
+                }
             </div>`,
+        )}
+    </div>`;
+}
+
+/** One commit's diff, every file of it, read as it opens: `git show`'s patch, in the viewer Changes uses. */
+function CommitDiff({ id, repo, commit }) {
+    const [state, setState] = useState({ loading: true, files: [], error: null });
+
+    useEffect(() => {
+        let live = true;
+
+        setState({ loading: true, files: [], error: null });
+        fetchCommitDiff(id, commit, repo).then(
+            (text) => {
+                if (!live) {
+                    return;
+                }
+
+                setState({ loading: false, files: parseDiff(text).files, error: null });
+            },
+            (error) => live && setState({ loading: false, files: [], error: error.message }),
+        );
+
+        return () => {
+            live = false;
+        };
+    }, [id, commit, repo]);
+
+    if (state.loading) {
+        return html`<div class="cm-diff"><${Loader} label="Reading the commit" /></div>`;
+    }
+
+    if (state.error !== null) {
+        return html`<p class="cm-diff err">${state.error}</p>`;
+    }
+
+    if (state.files.length === 0) {
+        return html`<p class="cm-diff muted">No files to show: git writes no diff for a merge commit.</p>`;
+    }
+
+    const added = state.files.reduce((sum, file) => sum + (file.added ?? 0), 0);
+    const removed = state.files.reduce((sum, file) => sum + (file.removed ?? 0), 0);
+
+    return html`<div class="cm-diff">
+        <p class="cm-diff-sum">
+            <strong>${state.files.length} ${state.files.length === 1 ? "file" : "files"}</strong>
+            <${ChangeCounts} added=${added} removed=${removed} />
+        </p>
+        ${state.files.map(
+            (file) => html`<${DiffFile} key=${file.path} file=${file} path=${file.path} />`,
         )}
     </div>`;
 }

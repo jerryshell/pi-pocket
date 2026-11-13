@@ -26,6 +26,7 @@ import {
     type Changes,
     changedFileCount,
     changesIn,
+    commitDiffIn,
     diffOf,
     editFacts,
     type RepoChange,
@@ -160,6 +161,24 @@ export class Workspace {
         return commitsIn(await this.#changesFolder(id, scope), limit).catch((error: unknown) => {
             throw new HttpError(409, describe(error));
         });
+    }
+
+    /** What one commit of that repository changed, as `git show` writes it: every file's diff. */
+    async commitDiff(
+        id: ConversationId,
+        user: User,
+        commit: string,
+        scope?: string,
+    ): Promise<string> {
+        this.#app.requireSee(user, id);
+        this.requireLocal(id);
+        this.#app.requireSteer(user);
+
+        return commitDiffIn(await this.#changesFolder(id, scope), commit).catch(
+            (error: unknown) => {
+                throw new HttpError(404, describe(error));
+            },
+        );
     }
 
     /**
