@@ -12,7 +12,7 @@ import { AgentDoc, defineExtension, defineTool, section } from "@earendil-works/
 import type { BrowserPage, LogEntry, Target } from "../browser/page.ts";
 import { displayUrl, normalizeUrl, REMOTE_FILES } from "../browser/urls.ts";
 import { presetOf, viewportFrom } from "../browser/viewport.ts";
-import type { PocketHost } from "../host.ts";
+import type { ExtensionWeb, PocketHost } from "../host.ts";
 import { workspaceScheme } from "../paths.ts";
 
 const ACTIONS = [
@@ -32,6 +32,7 @@ const ACTIONS = [
     "forward",
     "reload",
     "viewport",
+    "close",
 ] as const;
 
 type Action = (typeof ACTIONS)[number];
@@ -52,7 +53,8 @@ const MAX_TEXT = 20_000;
 
 const GUIDE = `The browser tool is a real Chromium on this machine. The people in this conversation see its page live in the Browser panel and can use it too: show and test web work there (local dev servers, HTML files on this machine, any site).
 - Start a dev server in the background with bash first (\`nohup npm run dev > /tmp/dev.log 2>&1 &\`), then navigate to it.
-- snapshot gives refs like [e12] for click, type, select, and hover, valid until the next snapshot. screenshot shows the layout; viewport changes the size. After a change, check console for errors.`;
+- snapshot gives refs like [e12] for click, type, select, and hover, valid until the next snapshot. screenshot shows the layout; viewport changes the size. After a change, check console for errors.
+- The page closes by itself when your run ends, unless a person is watching it or used it: it holds memory, and its address comes back when it opens again. close puts it away at once, for a page you are done with before the run ends.`;
 
 function clip(text: string, max = MAX_TEXT): string {
     return text.length > max
@@ -77,7 +79,21 @@ function formatLog(entry: LogEntry): string {
     return `[${entry.level}] ${entry.text}${entry.source === undefined ? "" : ` (${entry.source})`}`;
 }
 
-export default function createBrowser(host: PocketHost) {
+export default function createBrowser(host: PocketHost, web: ExtensionWeb) {
+    // The end of Pi's run puts away a page it opened: a Chromium page holds memory, and its address comes back when it
+    // opens again. A page a person watches or used stays: what it holds (a sign-in, a half-filled form) is theirs.
+    web.onDispose(
+        host.on("run.ended", ({ conversationId }) => {
+            const page = host.browsers.page(conversationId);
+
+            if (page === undefined || page.closed || page.watched || page.usedByPerson) {
+                return;
+            }
+
+            void host.browsers.close(conversationId).catch(() => {});
+        }),
+    );
+
     const browser = defineTool({
         name: "browser",
         description:
@@ -86,7 +102,7 @@ export default function createBrowser(host: PocketHost) {
             {
                 action: StringEnum(ACTIONS, {
                     description:
-                        "navigate (url), snapshot, screenshot, click/hover (ref, selector, label, or x and y), type (text into ref/selector/label, or the focused element), press (key), select (value in a select element), scroll (to ref/selector/label, or by dy), wait (text, selector, or timeoutMs), evaluate (script), console, back, forward, reload, viewport.",
+                        "navigate (url), snapshot, screenshot, click/hover (ref, selector, label, or x and y), type (text into ref/selector/label, or the focused element), press (key), select (value in a select element), scroll (to ref/selector/label, or by dy), wait (text, selector, or timeoutMs), evaluate (script), console, back, forward, reload, viewport, close (put the page away).",
                 }),
                 url: opt(
                     str({
@@ -179,6 +195,22 @@ export default function createBrowser(host: PocketHost) {
         execute: async (args, api, context) => {
             const signal = context.abortSignal;
             const action = args.action as Action;
+
+            // Closing opens nothing, and needs no page: a page no longer needed goes before the run ends.
+            if (action === "close") {
+                await host.browsers.close(Number(api.conversationId));
+
+                return {
+                    output: [
+                        {
+                            type: "text",
+                            text: "The page is closed. Its address stays, to open it again later.",
+                        },
+                    ],
+                    details: { action, url: "", address: "", title: "" },
+                };
+            }
+
             const agent = await api.snapshot(AgentDoc, api.conversationId, context);
             const cwd = agent?.cwd ?? process.cwd();
             // A page opened again comes back at its last address, unless Pi is about to open another.

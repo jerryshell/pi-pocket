@@ -183,6 +183,11 @@ export class BrowserPage {
     #saveTimer: NodeJS.Timeout | undefined;
     /** Last time Pi or a person used this page; idle pages close. */
     usedAt = Date.now();
+    /**
+     * A person used the page in the panel: what it holds (a sign-in, a half-filled form) is theirs to come back to, so
+     * the end of Pi's run leaves it open.
+     */
+    usedByPerson = false;
     readonly #popups = new Map<string, NodeJS.Timeout>();
     /** Tabs already sent here or closed, until the browser says they are gone: their later updates change nothing. */
     readonly #handled = new Set<string>();
@@ -220,6 +225,11 @@ export class BrowserPage {
 
     get closed(): boolean {
         return this.#closed || this.#connection.closed;
+    }
+
+    /** Whether a tab watches this page now: a frame is on its way to a panel. */
+    get watched(): boolean {
+        return this.#watchers > 0;
     }
 
     get url(): string {

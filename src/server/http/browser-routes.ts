@@ -126,6 +126,9 @@ export async function browserRoutes(
             throw new HttpError(409, "Nothing is open in the browser.");
         }
 
+        // A person works on it: what the page holds is theirs, so the end of Pi's run leaves it open.
+        page.usedByPerson = true;
+
         if (action === "input") {
             if (!Array.isArray(body.events)) {
                 throw new HttpError(400, "events must be a list");
@@ -178,6 +181,9 @@ export async function browserRoutes(
             restore: action !== "navigate",
             ...(viewport === undefined ? {} : { viewport }),
         });
+
+        // A person opened or drove the page from the panel: its state is theirs to come back to.
+        page.usedByPerson = true;
 
         if (action === "open") {
             return json(response, 200, browsers.state(key));

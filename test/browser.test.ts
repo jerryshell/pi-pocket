@@ -299,6 +299,11 @@ test(
 
             // Everyone who sees the session watches; only people who can steer use the page, and files are the owner's.
             await request(app.config.ownerToken, `c/${id}/browser/navigate`, { url: `${base}/` });
+            assert.equal(
+                app.browsers.page(Number(id))?.usedByPerson,
+                true,
+                "the panel's own action is a person's",
+            );
             const state = (await (await request(viewer.token, `c/${id}/browser`)).json()) as {
                 open: boolean;
             };
@@ -350,6 +355,66 @@ test(
         } finally {
             server.closeAllConnections();
             server.close();
+            await app.close();
+        }
+    },
+);
+
+test(
+    "a page closes when Pi's run ends, unless a person used it, and the tool can close it",
+    real,
+    async () => {
+        const results: string[] = [];
+
+        const route: FauxResponseStep = (request) => {
+            const { role, text } = lastText(request as never);
+
+            if (role === "toolResult") {
+                results.push(text);
+
+                return fauxAssistantMessage([fauxText("done")]);
+            }
+
+            if (text.endsWith("open a page")) {
+                return fauxAssistantMessage(
+                    [fauxToolCall("browser", { action: "navigate", url: "about:blank" })],
+                    { stopReason: "toolUse" },
+                );
+            }
+
+            if (text.endsWith("close it")) {
+                return fauxAssistantMessage([fauxToolCall("browser", { action: "close" })], {
+                    stopReason: "toolUse",
+                });
+            }
+
+            return fauxAssistantMessage([fauxText("ok")]);
+        };
+
+        const app: App = await openApp(scriptedModel(route), join(root, "closer"));
+
+        try {
+            const id = await newSession(app);
+
+            await loadTools(app, id, "browser");
+
+            const page = () => app.browsers.page(Number(id));
+
+            // The run opened a page of its own: its end puts the page away.
+            await say(app, id, "open a page");
+            await until(() => page() === undefined, "the page closing when the run ends");
+
+            // A person opened it in the panel: what it holds is theirs, so the end of a run leaves it.
+            await app.browsers.open(Number(id));
+            page()!.usedByPerson = true;
+            await say(app, id, "hello");
+            assert.notEqual(page(), undefined, "a page a person used stays");
+
+            // The tool puts a page away at once, without waiting for the run to end.
+            await say(app, id, "close it");
+            await until(() => page() === undefined, "the page the tool closed");
+            assert.match(results.at(-1) ?? "", /The page is closed/);
+        } finally {
             await app.close();
         }
     },

@@ -15,6 +15,9 @@ import { BrowserPage, type BrowserState, type Saved, wait } from "./browser/page
 import { type Viewport, VIEWPORTS, viewportFrom } from "./browser/viewport.ts";
 import { describe } from "./errors.ts";
 
+/** How long the browser stays after its last page closed: a moment, should the next page come at once. */
+const STOP_AFTER_MS = 60_000;
+
 export type OpenOptions = {
     /** The size of a page that has no saved size. */
     viewport?: Viewport;
@@ -43,8 +46,7 @@ export interface BrowsersOptions {
 /**
  * The browser and every conversation's page. The browser starts with the first page and stops a while after the last
  * one closes; pages close after a while unused.
- */
-export class Browsers {
+ */ export class Browsers {
     readonly #options: BrowsersOptions;
     #executable: string | null | undefined;
     #chromium: Promise<Chromium> | undefined;
@@ -372,12 +374,13 @@ export class Browsers {
             }
         }
 
-        // The browser itself stops a few minutes after its last page closed.
+        // The browser itself stops a minute after its last page closed: a Chromium of its own is a lot of memory, and
+        // the next page starts it again in a moment.
         if (
             this.#pages.size === 0 &&
             this.#opening.size === 0 &&
             this.#chromium !== undefined &&
-            Date.now() - this.#idleSince > 5 * 60_000
+            Date.now() - this.#idleSince > STOP_AFTER_MS
         ) {
             void this.#stopBrowser();
         }
