@@ -112,7 +112,7 @@ A module split into parts keeps its name for the part others import, with the re
 | `transcripts.ts`                       | `app.transcripts`: stored history as people read it: an entry (its own, or one a fork inherited), the images in it, what came before the active context, and the session as Markdown               |
 | `files.ts`                             | The files in a session's folder for `@` mentions: git's list, or a capped walk; kept briefly per folder, versioned, and compressed once. The file viewer's reads, and the paths a message mentions |
 | `changes.ts`, `worktrees.ts`, `git.ts` | The Files tile's Changes (the repositories right under a folder that is in none, and undoing a file there), per-session worktrees, and the git runner both use                                     |
-| `branches.ts`                          | A session's git branch: read from the repository's HEAD for its view (`Room` looks every few seconds), listed and switched for the branch picker                                                   |
+| `branches.ts`                          | A session's git branch: read from the repository's HEAD for its view (`Room` looks every few seconds), listed and switched for the branch picker, and its commits for Changes' History             |
 | `export.ts`                            | A session as Markdown                                                                                                                                                                              |
 
 ### HTTP: `http.ts` and `http/`

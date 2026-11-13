@@ -12,6 +12,8 @@ import type { PocketApp } from "./app.ts";
 import {
     type Branches,
     branchesIn,
+    type Commit,
+    commitsIn,
     gitDirOf,
     type Head,
     headOf,
@@ -137,6 +139,25 @@ export class Workspace {
         }
 
         return branchesIn(cwd).catch((error: unknown) => {
+            throw new HttpError(409, describe(error));
+        });
+    }
+
+    /**
+     * The commits of a session's repository, or of one of the repositories under a folder that is in none, newest
+     * first. The branch it has checked out, as the folder's own history shows: `scope` names the repository there.
+     */
+    async commits(
+        id: ConversationId,
+        user: User,
+        scope?: string,
+        limit?: number,
+    ): Promise<Commit[]> {
+        this.#app.requireSee(user, id);
+        this.requireLocal(id);
+        this.#app.requireSteer(user);
+
+        return commitsIn(await this.#changesFolder(id, scope), limit).catch((error: unknown) => {
             throw new HttpError(409, describe(error));
         });
     }

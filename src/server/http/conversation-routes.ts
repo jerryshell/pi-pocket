@@ -542,6 +542,20 @@ export async function conversationRoutes(
         );
     }
 
+    if (third === "commits" && fourth === undefined && method === "GET") {
+        // The repository's checked-out branch, `repo` naming one under a folder that is in none, as for Changes.
+        const repo = url.searchParams.get("repo") || undefined;
+        const asked = Number(url.searchParams.get("limit") ?? "");
+        const commits = await app.workspace.commits(
+            id,
+            user,
+            repo,
+            Number.isFinite(asked) && asked > 0 ? asked : undefined,
+        );
+
+        return json(response, 200, { commits });
+    }
+
     // What an artifact's page saved for this person (`artifact-state.ts`): anyone who sees the session keeps their own.
     if (third === "artifact-state" && fourth !== undefined && parts.length === 4) {
         if (method === "GET") {

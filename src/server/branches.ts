@@ -25,6 +25,18 @@ export type LocalBranch = {
 
 export type RemoteBranch = { name: string; at: number; subject: string };
 
+/** One commit of a repository's checked-out branch. */
+export type Commit = {
+    /** The whole id. */
+    hash: string;
+    /** Its first 7 characters, as git shows it. */
+    short: string;
+    subject: string;
+    author: string;
+    /** When it was committed, in milliseconds. */
+    at: number;
+};
+
 export type Branches = {
     head: Head | undefined;
     /** Newest first, at most `MAX_BRANCHES`. */
@@ -39,6 +51,10 @@ export type Branches = {
 
 /** The most branches each list has, newest first: the picker searches what it has. */
 const MAX_BRANCHES = 1000;
+
+/** The commits a look lists by default, and the most it may ask for: a phone shows a screenful at a time. */
+export const COMMITS_SHOWN = 50;
+const MAX_COMMITS = 200;
 const GIT_TIMEOUT_MS = 15_000;
 const git = (cwd: string, args: string[]) => runGit(cwd, args, { timeoutMs: GIT_TIMEOUT_MS });
 
@@ -180,6 +196,51 @@ export async function branchesIn(cwd: string): Promise<Branches> {
 
 /** The local name for a remote branch: `origin/fix/login` is `fix/login`. */
 export const localName = (remote: string) => remote.slice(remote.indexOf("/") + 1);
+
+/**
+ * The commits of the branch a repository has checked out, newest first, up to `limit` (at most `MAX_COMMITS`). A
+ * repository with no commit yet has none: `git log` fails on one, which is no problem to report.
+ */
+export async function commitsIn(folder: string, limit = COMMITS_SHOWN): Promise<Commit[]> {
+    const count = Math.max(1, Math.min(MAX_COMMITS, Math.floor(limit) || COMMITS_SHOWN));
+    const hasHead = await git(folder, ["rev-parse", "--verify", "--quiet", "HEAD"]).then(
+        () => true,
+        () => false,
+    );
+
+    if (!hasHead) {
+        return [];
+    }
+
+    const fields = ["%H", "%h", "%an", "%at", "%s"];
+    const output = await git(folder, [
+        "log",
+        `--max-count=${count}`,
+        // Every field ends in NUL, so a name with a newline in it is just text.
+        `--format=${fields.join("%x00")}%x00`,
+        "HEAD",
+        "--",
+    ]);
+    const values = output.split("\0");
+    const commits: Commit[] = [];
+
+    for (let index = 0; index + fields.length <= values.length; index += fields.length) {
+        const [first = "", short = "", author = "", at = "", subject = ""] = values.slice(
+            index,
+            index + fields.length,
+        );
+        // Git ends each record's line with a newline, which starts the next one's first field.
+        const hash = first.replace(/^\n/, "");
+
+        if (hash === "") {
+            continue;
+        }
+
+        commits.push({ hash, short, author, at: Number(at) * 1000, subject });
+    }
+
+    return commits;
+}
 
 /** Whether git takes a name for a branch: no spaces, no `..`, not starting with `-`, and the rest of git's rules. */
 export async function validBranchName(cwd: string, name: string): Promise<boolean> {

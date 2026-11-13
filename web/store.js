@@ -2700,6 +2700,22 @@ export const actions = {
     changes: (id = current(), repo) =>
         api(`c/${id}/changes${repo ? `?repo=${encodeURIComponent(repo)}` : ""}`),
     branches: () => api(`c/${current()}/branches`),
+    /** The commits of the session's repository, or of one under a folder that is in none, newest first. */
+    commits: (id = current(), repo, limit) => {
+        const query = new URLSearchParams();
+
+        if (repo) {
+            query.set("repo", repo);
+        }
+
+        if (limit) {
+            query.set("limit", String(limit));
+        }
+
+        const text = query.toString();
+
+        return api(`c/${id}/commits${text === "" ? "" : `?${text}`}`);
+    },
     switchBranch: (target) => api(`c/${current()}/branch`, target),
     /** Undo the uncommitted changes to one file. */
     revert: (path, repo) => api(`c/${current()}/changes/revert`, repo ? { path, repo } : { path }),

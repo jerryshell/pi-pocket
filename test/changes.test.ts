@@ -323,3 +323,50 @@ test("a folder that holds repositories reviews one of them at a time", async () 
     assert.equal(readFileSync(join(two, "same.txt"), "utf8"), "two\n");
     assert.equal(readFileSync(join(one, "same.txt"), "utf8"), "one\nchanged\n");
 });
+
+test("a folder's repositories show their own commits, newest first", async () => {
+    const one = repository("history/one", { "a.txt": "one\n" });
+
+    repository("history/two", { "b.txt": "two\n" });
+    const projects = join(root, "history");
+    const empty = join(projects, "empty");
+
+    mkdirSync(empty, { recursive: true });
+    execFileSync("git", ["init", "-q"], { cwd: empty });
+
+    // A second commit, so the order shows: newest first, as `git log` lists them.
+    writeFileSync(join(one, "a.txt"), "one\nmore\n");
+    execFileSync("git", ["commit", "-qam", "second"], {
+        cwd: one,
+        env: {
+            ...process.env,
+            GIT_AUTHOR_NAME: "T",
+            GIT_AUTHOR_EMAIL: "t@example.com",
+            GIT_COMMITTER_NAME: "T",
+            GIT_COMMITTER_EMAIL: "t@example.com",
+        },
+    });
+
+    const id = await newSession(app, projects);
+    const commits = await app.workspace.commits(id, owner(app), "one");
+
+    assert.deepEqual(
+        commits.map((commit) => commit.subject),
+        ["second", "init"],
+    );
+    assert.match(commits[0]!.hash, /^[0-9a-f]{40}$/);
+    assert.ok(commits[0]!.hash.startsWith(commits[0]!.short), "the short id is its start");
+    assert.equal(commits[0]!.author, "T");
+    assert.ok(commits[0]!.at > 0);
+
+    assert.deepEqual(
+        (await app.workspace.commits(id, owner(app), "two")).map((commit) => commit.subject),
+        ["init"],
+    );
+    assert.deepEqual(await app.workspace.commits(id, owner(app), "empty"), []);
+    await assert.rejects(app.workspace.commits(id, owner(app), "missing"), { status: 404 });
+
+    const [only] = await app.workspace.commits(id, owner(app), "one", 1);
+
+    assert.equal(only?.subject, "second", "a look may ask for fewer");
+});

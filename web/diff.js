@@ -10,7 +10,7 @@ import { highlight, highlightLines, langOf } from "./highlight.js";
 import { personStorage } from "./person-storage.js";
 import { branchAvailable } from "./sheets/branch.js";
 import { actions, attempt, canSteer, notify, openSheet, store } from "./store.js";
-import { html, Icon, Loader, openFile, shortPath } from "./ui.js";
+import { html, Icon, Loader, openFile, shortPath, timeAgo } from "./ui.js";
 
 // ─── Preferences ────────────────────────────────────────────────────────────────────
 
@@ -1290,6 +1290,50 @@ function RepoSwitch({ repos, scope, onPick }) {
 }
 
 /**
+ * The commits of the repository Changes shows, newest first: the branch it has checked out, as `git log` lists it.
+ * `asked` changes with Look again, which reads them once more.
+ */
+function CommitList({ id, repo, asked }) {
+    const [state, setState] = useState({ loading: true, commits: [], error: null });
+
+    useEffect(() => {
+        let live = true;
+
+        setState((before) => ({ ...before, loading: true, error: null }));
+        actions.commits(id, repo).then(
+            ({ commits }) => live && setState({ loading: false, commits, error: null }),
+            (error) => live && setState({ loading: false, commits: [], error: error.message }),
+        );
+
+        return () => {
+            live = false;
+        };
+    }, [id, repo, asked]);
+
+    if (state.error !== null) {
+        return html`<p class="dv-empty err">${state.error}</p>`;
+    }
+
+    if (state.loading) {
+        return html`<${Loader} label="Reading the log" />`;
+    }
+
+    if (state.commits.length === 0) {
+        return html`<p class="cm-empty muted">No commits yet: this repository has no history to show.</p>`;
+    }
+
+    return html`<div class="cm-list" role="list">
+        ${state.commits.map(
+            (commit) => html`<div class="cm-row" role="listitem" key=${commit.hash}>
+                <span class="cm-hash mono">${commit.short}</span>
+                <span class="cm-subject">${commit.subject}</span>
+                <span class="cm-meta">${commit.author} · ${timeAgo(commit.at)}</span>
+            </div>`,
+        )}
+    </div>`;
+}
+
+/**
  * Review: every uncommitted change in the session's folder, as a tree of files beside their diffs (or above them, when
  * narrow). Files fold, mark as viewed (kept per device until the file's diff changes), and fetch their diffs as they
  * near the screen. Keys: j and k go to the next and previous file, n and p to the next and previous hunk, v marks the
@@ -1309,6 +1353,7 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
         // The top bar counts every repository under the folder, in an answer of its own when this folder holds some.
         const asked = [load(), ...(changes?.repos === undefined ? [] : [reloadChanges(id)])];
 
+        setHistoryAsked((each) => each + 1);
         // An answer equal to the one shown draws nothing, yet the diffs on screen have a new key to read again.
         Promise.all(asked).finally(() => store.set({}));
     };
@@ -1338,6 +1383,9 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
     const [onlyPi, setOnlyPi] = useState(false);
     const [current, setCurrent] = useState(null);
     const [treeOpen, setTreeOpen] = useState(false);
+    // The repository's commits instead of its uncommitted changes, and a look again of them as Look again is tapped.
+    const [history, setHistory] = useState(false);
+    const [historyAsked, setHistoryAsked] = useState(0);
     const prints = useRef({});
     const ref = useRef(null);
     const width = useWidth(ref);
@@ -1574,6 +1622,7 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
                       : html`<span class="muted small">Not a git repository: only Pi's edits are listed.</span>`
             }
             ${
+                !history &&
                 all.length > 0 &&
                 html`<span class="dr-stats">
                     <strong>${files.length} ${files.length === 1 ? "file" : "files"}</strong>
@@ -1582,7 +1631,19 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
                 <span class="dr-viewed">${seen} of ${files.length} viewed</span>`
             }
             <span class="dr-actions">
-                ${all.length > 0 && html`<${LayoutSwitch} />`}
+                ${
+                    changes.repo &&
+                    html`<button
+                        type="button"
+                        class=${`chip toggle dr-history ${history ? "on" : ""}`}
+                        aria-pressed=${history ? "true" : "false"}
+                        title=${`The commits of ${changes.scope ?? "this repository"}`}
+                        onClick=${() => setHistory(!history)}
+                    >
+                        History
+                    </button>`
+                }
+                ${!history && all.length > 0 && html`<${LayoutSwitch} />`}
                 <button
                     class="icon-button dv-tool"
                     type="button"
@@ -1596,6 +1657,12 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
         </div>
         ${repos.length > 0 && html`<${RepoSwitch} repos=${repos} scope=${changes.scope} onPick=${pick} />`}
         ${
+            history &&
+            changes.repo &&
+            html`<${CommitList} id=${id} repo=${changes.scope} asked=${historyAsked} />`
+        }
+        ${
+            !history &&
             all.length > 0 &&
             html`<div class="dr-tools">
                 <input
@@ -1634,6 +1701,7 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
             </div>`
         }
         ${
+            !history &&
             changes.repo &&
             all.length === 0 &&
             html`<div class="dr-clean">
@@ -1642,6 +1710,7 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
             </div>`
         }
         ${
+            !history &&
             all.length > 0 &&
             html`<div class="dr-main">
                 ${

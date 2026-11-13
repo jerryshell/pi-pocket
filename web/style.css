@@ -14379,6 +14379,54 @@ textarea.notes {
     color: var(--bg);
 }
 
+/* The repository's commits, in Changes: a hash, its subject, and who made it when. */
+.cm-list {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 0 12px 14px;
+    overflow-y: auto;
+}
+
+.cm-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 2px 10px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--hair);
+}
+
+.cm-hash {
+    color: var(--faint);
+    font-size: 11.5px;
+}
+
+.cm-subject {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cm-meta {
+    grid-column: 2;
+    color: var(--muted);
+    font-size: 11.5px;
+}
+
+.cm-empty {
+    padding: 12px 14px;
+}
+
+.chip.dr-history {
+    height: 26px;
+    padding: 0 10px;
+    border-radius: calc(var(--r-row) - 1px);
+    background: none;
+    font-size: 12px;
+}
+
 .dr-main {
     display: grid;
     gap: 10px;
