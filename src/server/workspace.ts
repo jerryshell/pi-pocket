@@ -20,7 +20,16 @@ import {
     switchBranch,
     validBranchName,
 } from "./branches.ts";
-import { type Changes, changesIn, diffOf, editFacts, revertFile } from "./changes.ts";
+import {
+    type Changes,
+    changedFileCount,
+    changesIn,
+    diffOf,
+    editFacts,
+    type RepoChange,
+    revertFile,
+    reposUnder,
+} from "./changes.ts";
 import type { User } from "./config.ts";
 import { describe, HttpError } from "./errors.ts";
 import { FileLists, type FileListing, type FileView, viewFile } from "./files.ts";
@@ -29,6 +38,8 @@ import type { ClientEntry } from "./projection.ts";
 
 /** How many sessions' Pi edits are kept between looks at Changes (`#edits`). */
 const EDITS_KEPT = 64;
+/** How long the repositories under a folder, and their file counts, are kept: every tab asks, often together. */
+const REPOS_KEPT = 3000;
 
 export class Workspace {
     readonly #app: PocketApp;
@@ -63,6 +74,15 @@ export class Workspace {
      * at last: entries never change, so a look reads only those added since, not the whole history each time.
      */
     readonly #edits = new Map<ConversationId, { last: number; entries: ClientEntry[] }>();
+
+    /**
+     * The repositories right under each folder, and how many files changed in each, for a few seconds: every tab that
+     * shows a session asks for them, often together, and each one takes a `git status`.
+     */
+    readonly #repos = new Map<string, { repos: RepoChange[]; at: number }>();
+
+    /** The looks for the repositories under a folder that are under way, which each tab that asks shares. */
+    readonly #repoLookups = new Map<string, Promise<RepoChange[]>>();
 
     /**
      * Where each folder's repository keeps its files, for a minute: views ask on every update. A folder in none is
@@ -425,7 +445,12 @@ export class Workspace {
      * Undo the uncommitted changes to one file of a session's repository. It changes files under Pi, so it takes the
      * right to drive and waits until Pi is not working; Pi is told, with its next message.
      */
-    async revertChange(id: ConversationId, user: User, path: string): Promise<void> {
+    async revertChange(
+        id: ConversationId,
+        user: User,
+        path: string,
+        scope?: string,
+    ): Promise<void> {
         this.#app.requireSee(user, id);
         this.requireLocal(id);
         await this.#app.requireDriver(id, user);
@@ -437,7 +462,8 @@ export class Workspace {
             );
         }
 
-        const kind = await revertFile(this.#app.cwdOf(id), path, user.sessions !== undefined).catch(
+        const folder = await this.#changesFolder(id, scope);
+        const kind = await revertFile(folder, path, user.sessions !== undefined).catch(
             (error: unknown) => {
                 throw new HttpError(409, describe(error));
             },
@@ -453,22 +479,41 @@ export class Workspace {
     }
 
     /** What changed in a session's folder: Pi's edits, and the uncommitted changes of its git repository. */
-    async changes(id: ConversationId, user: User): Promise<Changes> {
+    async changes(id: ConversationId, user: User, scope?: string): Promise<Changes> {
         this.#app.requireSee(user, id);
         this.requireLocal(id);
         this.#app.requireSteer(user);
 
+        const cwd = this.#app.cwdOf(id);
+        // A folder in no repository, one that holds some: Changes reviews one of them at a time.
+        const found = this.inRepository(cwd) ? [] : await this.#reposUnder(cwd);
+        const repos = found.length === 0 ? undefined : found;
+        const chosen =
+            scope === undefined ? undefined : repos?.find((repo) => repo.name === scope)?.name;
+
+        if (scope !== undefined && chosen === undefined) {
+            throw new HttpError(404, "This session's folder holds no repository by that name.");
+        }
+
         // Someone invited to this session only sees the files in its folder, here as in `conversationFile`.
         const onlyHere = user.sessions !== undefined;
-        const key = `${id}:${onlyHere}`;
+        const key = `${id}:${onlyHere}:${chosen ?? ""}`;
         const underWay = this.#changesUnderWay.get(key);
 
         if (underWay !== undefined) {
             return underWay;
         }
 
-        const pending = (async () =>
-            changesIn(this.#app.cwdOf(id), await this.#editEntries(id), onlyHere))().finally(() => {
+        const folder = chosen === undefined ? cwd : join(cwd, chosen);
+        const pending = (async () => {
+            const changes = await changesIn(folder, await this.#editEntries(id), onlyHere);
+
+            return {
+                ...changes,
+                ...(repos === undefined ? {} : { repos }),
+                ...(chosen === undefined ? {} : { scope: chosen }),
+            };
+        })().finally(() => {
             if (this.#changesUnderWay.get(key) === pending) {
                 this.#changesUnderWay.delete(key);
             }
@@ -477,6 +522,71 @@ export class Workspace {
         this.#changesUnderWay.set(key, pending);
 
         return pending;
+    }
+
+    /**
+     * The repositories right under a folder, with how many files changed in each, kept for a few seconds: every tab
+     * that shows the session asks, and each repository takes a `git status`. The list comes back in name order.
+     */
+    #reposUnder(cwd: string): Promise<RepoChange[]> {
+        const known = this.#repos.get(cwd);
+
+        if (known !== undefined && Date.now() - known.at < REPOS_KEPT) {
+            return Promise.resolve(known.repos);
+        }
+
+        const underWay = this.#repoLookups.get(cwd);
+
+        if (underWay !== undefined) {
+            return underWay;
+        }
+
+        const pending = (async () => {
+            const names = await reposUnder(cwd);
+            const repos = await Promise.all(
+                names.map(async (name): Promise<RepoChange> => ({
+                    name,
+                    // A look that fails says nothing changed: the file counts are a hint, not a report.
+                    files: await changedFileCount(join(cwd, name)).catch(() => 0),
+                })),
+            );
+
+            return repos;
+        })()
+            .then((repos) => {
+                this.#repos.set(cwd, { repos, at: Date.now() });
+
+                return repos;
+            })
+            .finally(() => {
+                if (this.#repoLookups.get(cwd) === pending) {
+                    this.#repoLookups.delete(cwd);
+                }
+            });
+
+        this.#repoLookups.set(cwd, pending);
+
+        return pending;
+    }
+
+    /**
+     * The folder a request's repository names: one of those right under the session's folder, which the folder itself
+     * is in none of. Without one, the session's folder, as Changes has always read it.
+     */
+    async #changesFolder(id: ConversationId, scope: string | undefined): Promise<string> {
+        const cwd = this.#app.cwdOf(id);
+
+        if (scope === undefined) {
+            return cwd;
+        }
+
+        const found = this.inRepository(cwd) ? [] : await this.#reposUnder(cwd);
+
+        if (!found.some((repo) => repo.name === scope)) {
+            throw new HttpError(404, "This session's folder holds no repository by that name.");
+        }
+
+        return join(cwd, scope);
     }
 
     /** A session's history as far as Changes reads it, oldest first, read from storage since the last look. */
@@ -510,18 +620,28 @@ export class Workspace {
 
     /** Looks under way began before a file was undone: one asked from now on looks again. */
     #forgetChanges(id: ConversationId): void {
-        this.#changesUnderWay.delete(`${id}:true`);
-        this.#changesUnderWay.delete(`${id}:false`);
+        for (const key of this.#changesUnderWay.keys()) {
+            if (key.startsWith(`${id}:`)) {
+                this.#changesUnderWay.delete(key);
+            }
+        }
     }
 
     /** The diff of one changed file in a session's repository. */
-    async changeDiff(id: ConversationId, user: User, path: string): Promise<string> {
+    async changeDiff(
+        id: ConversationId,
+        user: User,
+        path: string,
+        scope?: string,
+    ): Promise<string> {
         this.#app.requireSee(user, id);
         this.requireLocal(id);
         this.#app.requireSteer(user);
 
         try {
-            return await diffOf(this.#app.cwdOf(id), path, user.sessions !== undefined);
+            const folder = await this.#changesFolder(id, scope);
+
+            return await diffOf(folder, path, user.sessions !== undefined);
         } catch (error) {
             throw new HttpError(404, describe(error));
         }

@@ -772,6 +772,8 @@ function WrapToggle() {
 // ─── Review: every change in the folder ───────────────────────────────────────────────
 
 const VIEWED_KEY = "viewed";
+/** The repository under a session's folder that its Changes review shows here, for a folder that holds some. */
+const REPO_KEY = "changes.repo";
 
 function readViewed(id) {
     try {
@@ -791,12 +793,16 @@ const BUSY_WAIT = 4000;
 /** While Pi works, the longest the changes go without being read again. */
 const BUSY_MAX = 8000;
 
-/** What changed, per conversation: the last answer, and the request on its way, shared by everything that shows it. */
+/** What changed, per conversation and repository of its folder: the last answer, and the request on its way. */
 const changesCache = new Map();
 
+/** What a conversation's changes are of: its folder's repository, or one of those right under a folder in none. */
+const changesKey = (id, repo) => `${id}\u0000${repo ?? ""}`;
+
 /** Ask again for what changed in a conversation's folder, at most once at a time. */
-export function reloadChanges(id = store.state.conversationId) {
-    const known = changesCache.get(id) ?? { data: null, error: null, pending: null };
+export function reloadChanges(id = store.state.conversationId, repo) {
+    const key = changesKey(id, repo);
+    const known = changesCache.get(key) ?? { data: null, error: null, pending: null };
 
     if (known.pending) {
         return known.pending;
@@ -807,7 +813,7 @@ export function reloadChanges(id = store.state.conversationId) {
     // What shows now: an answer the same as it draws nothing again (each draw is the whole app's).
     const shown = JSON.stringify([known.data, known.error]);
 
-    known.pending = actions.changes(id).then(
+    known.pending = actions.changes(id, repo).then(
         (data) => {
             // The same answer keeps its object, so what is built from it is not built again.
             const same = JSON.stringify(data) === JSON.stringify(known.data);
@@ -822,7 +828,7 @@ export function reloadChanges(id = store.state.conversationId) {
         },
         (failure) => Object.assign(known, { error: failure.message, pending: null }),
     );
-    changesCache.set(id, known);
+    changesCache.set(key, known);
     known.pending.finally(() => {
         if (JSON.stringify([known.data, known.error]) !== shown) {
             store.set({});
@@ -835,19 +841,21 @@ export function reloadChanges(id = store.state.conversationId) {
 /**
  * What changed in this conversation's folder, `{ changes, error }`, fetched when first wanted and again a moment after
  * the conversation moves on (Pi's edits show up on their own) while `live`. A tab out of sight waits until it shows
- * again; with nothing new since the last answer and Pi quiet, the answer holds (Refresh asks again).
+ * again; with nothing new since the last answer and Pi quiet, the answer holds (Refresh asks again). `repo` asks about
+ * one of the repositories right under a folder that is in none.
  */
-export function useChanges(live = true) {
+export function useChanges(live = true, repo) {
     const id = store.state.conversationId;
-    const known = changesCache.get(id);
+    const key = changesKey(id, repo);
+    const known = changesCache.get(key);
     const lastEntry = store.state.view.order?.at(-1);
     const busy = store.state.view.live?.busy;
 
     useEffect(() => {
-        if (!changesCache.get(id)?.data) {
-            reloadChanges(id);
+        if (!changesCache.get(key)?.data) {
+            reloadChanges(id, repo);
         }
-    }, [id]);
+    }, [key, id, repo]);
     // The first look after it shows (or turns live) always asks: the folder can have changed outside the conversation
     // (an editor, a terminal, another session), and so can it while the tab was out of sight.
     const first = useRef(true);
@@ -860,18 +868,18 @@ export function useChanges(live = true) {
         }
 
         const look = (always) => {
-            const known = changesCache.get(id);
+            const known = changesCache.get(key);
 
             if (document.hidden || (!always && !busy && known?.data && known.entry === lastEntry)) {
                 return;
             }
 
-            reloadChanges(id);
+            reloadChanges(id, repo);
         };
 
         const shown = () => !document.hidden && look(true);
         // While Pi works, entries come quickly: look less often then, but at least every few seconds.
-        const since = Date.now() - (changesCache.get(id)?.at ?? 0);
+        const since = Date.now() - (changesCache.get(key)?.at ?? 0);
         const wait = busy ? Math.max(0, Math.min(BUSY_WAIT, BUSY_MAX - since)) : QUIET_WAIT;
         const timer = setTimeout(() => {
             look(first.current);
@@ -884,7 +892,7 @@ export function useChanges(live = true) {
             clearTimeout(timer);
             document.removeEventListener("visibilitychange", shown);
         };
-    }, [lastEntry, busy, live, id]);
+    }, [lastEntry, busy, live, key, id, repo]);
 
     return { changes: known?.data ?? null, error: known?.error ?? null };
 }
@@ -900,9 +908,14 @@ const refreshes = new Map();
  * What a diff depends on: the file (its version, and its counts), the commit it is against, and the last Refresh. Any
  * of them changing reads the diff again.
  */
-const diffKey = (id, file, base) =>
+/**
+ * What a diff depends on: the file (its version, and its counts), the repository under the folder it is in, the commit
+ * it is against, and the last Refresh. Any of them changing reads the diff again.
+ */
+const diffKey = (id, file, base, repo) =>
     [
         id,
+        repo ?? "",
         file.path,
         file.kind,
         file.version ?? "",
@@ -937,15 +950,14 @@ const DIFF_FETCHES = 4;
 let fetching = 0;
 const waiting = [];
 
-function fetchDiff(id, path) {
+function fetchDiff(id, path, repo) {
     return new Promise((resolve, reject) => {
         const run = async () => {
             fetching++;
 
             try {
-                const response = await fetch(
-                    `/api/c/${id}/changes/diff?path=${encodeURIComponent(path)}`,
-                );
+                const query = `path=${encodeURIComponent(path)}${repo ? `&repo=${encodeURIComponent(repo)}` : ""}`;
+                const response = await fetch(`/api/c/${id}/changes/diff?${query}`);
                 const text = await response.text();
 
                 if (!response.ok) {
@@ -1102,6 +1114,7 @@ function ReviewFile({
     file,
     root,
     base,
+    repo,
     open,
     viewedAs,
     onToggle,
@@ -1110,7 +1123,7 @@ function ReviewFile({
     onChanged,
 }) {
     const ref = useRef(null);
-    const key = diffKey(id, file, base);
+    const key = diffKey(id, file, base, repo);
     const [entry, setEntry] = useState(() => diffCache.get(key) ?? null);
     const [error, setError] = useState(null);
     const [near, setNear] = useState(false);
@@ -1150,7 +1163,7 @@ function ReviewFile({
         let live = true;
 
         setEntry(null);
-        fetchDiff(id, file.path).then(
+        fetchDiff(id, file.path, repo).then(
             (text) => {
                 const parsed = parseDiff(text, file.path).files[0] ?? null;
                 const made = { parsed, print: fingerprint(text) };
@@ -1198,7 +1211,7 @@ function ReviewFile({
     const undo = () =>
         undoing
             ? attempt(async () => {
-                  await actions.revert(file.path);
+                  await actions.revert(file.path, repo);
                   notify(
                       "info",
                       fresh
@@ -1254,6 +1267,29 @@ function ReviewFile({
 }
 
 /**
+ * The repositories right under a folder that is in none, as a row of chips: Changes reviews one of them at a time,
+ * and each chip says how many files changed in it.
+ */
+function RepoSwitch({ repos, scope, onPick }) {
+    return html`<div class="dr-repos" role="tablist" aria-label="Repositories under this folder">
+        ${repos.map(
+            (repo) => html`<button
+                key=${repo.name}
+                type="button"
+                role="tab"
+                aria-selected=${repo.name === scope ? "true" : "false"}
+                class=${`chip dr-repo ${repo.name === scope ? "on" : ""}`}
+                title=${`${repo.files} ${repo.files === 1 ? "file" : "files"} to review in ${repo.name}`}
+                onClick=${() => onPick(repo.name)}
+            >
+                <span class="dr-repo-name">${repo.name}</span>
+                ${repo.files > 0 && html`<span class="dr-repo-count">${repo.files}</span>`}
+            </button>`,
+        )}
+    </div>`;
+}
+
+/**
  * Review: every uncommitted change in the session's folder, as a tree of files beside their diffs (or above them, when
  * narrow). Files fold, mark as viewed (kept per device until the file's diff changes), and fetch their diffs as they
  * near the screen. Keys: j and k go to the next and previous file, n and p to the next and previous hunk, v marks the
@@ -1263,16 +1299,40 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
     const id = store.state.conversationId;
     const { server, view } = store.state;
     const cwd = view.agent?.cwd ?? view.conversation?.cwd ?? "";
-    const { changes, error } = useChanges(active);
-    const load = () => reloadChanges(id);
+    // A folder that holds repositories is reviewed one of them at a time: `scope` names it, once one is picked.
+    const [scope, setScope] = useState(null);
+    const { changes, error } = useChanges(active, scope ?? undefined);
+    const load = () => reloadChanges(id, scope ?? undefined);
 
     const refresh = () => {
         forgetDiffs(id);
+        // The top bar counts every repository under the folder, in an answer of its own when this folder holds some.
+        const asked = [load(), ...(changes?.repos === undefined ? [] : [reloadChanges(id)])];
+
         // An answer equal to the one shown draws nothing, yet the diffs on screen have a new key to read again.
-        load().finally(() => store.set({}));
+        Promise.all(asked).finally(() => store.set({}));
     };
 
-    const [viewed, setViewedState] = useState(() => readViewed(id));
+    // The one picked here last, else the one with changes, else the first: the list comes with the first answer.
+    useEffect(() => {
+        const found = changes?.repos ?? [];
+
+        if (scope !== null || found.length === 0) {
+            return;
+        }
+
+        const remembered = personStorage.get(`${REPO_KEY}.${id}`);
+        const repo =
+            found.find((each) => each.name === remembered) ??
+            found.find((each) => each.files > 0) ??
+            found[0];
+
+        setScope(repo.name);
+    }, [scope, changes, id]);
+
+    // Viewed marks are the repository's too: `src/app.ts` in two of them is two files.
+    const marks = scope === null ? id : `${id}:${scope}`;
+    const [viewed, setViewedState] = useState(() => readViewed(marks));
     const [folded, setFolded] = useState({});
     const [filter, setFilter] = useState("");
     const [onlyPi, setOnlyPi] = useState(false);
@@ -1283,6 +1343,16 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
     const width = useWidth(ref);
     const wide = width >= 720;
 
+    /** Review another repository under the folder, which this browser remembers for the session. */
+    const pick = (name) => {
+        personStorage.set(`${REPO_KEY}.${id}`, name);
+        prints.current = {};
+        setFolded({});
+        setFilter("");
+        setOnlyPi(false);
+        setScope(name);
+    };
+
     // The tree of changed files over the diffs, where they do not fit side by side, in a tile that covers the screen:
     // back folds it away.
     useBack(covering && active && treeOpen && width > 0 && !wide, () => setTreeOpen(false));
@@ -1290,8 +1360,10 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
     const wasActive = useRef(active);
 
     useEffect(() => {
-        setViewedState(readViewed(id));
-    }, [id]);
+        setViewedState(readViewed(marks));
+        // The prints of another repository's files say nothing about these.
+        prints.current = {};
+    }, [marks]);
     // Keys reach the review when someone asks for it (its tab picked, the tile opened on it, the sheet), away from touch
     // screens: not on a reload, nor on a phone, where it would only move the page.
     const ask = store.state.filesAsk;
@@ -1322,7 +1394,7 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
                 next[path] = print;
             }
 
-            writeViewed(id, next);
+            writeViewed(marks, next);
 
             return next;
         });
@@ -1344,7 +1416,7 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
                 return before;
             }
 
-            writeViewed(id, kept);
+            writeViewed(marks, kept);
 
             return kept;
         });
@@ -1468,6 +1540,8 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
     }
 
     const all = changes.files;
+    // The repositories right under a folder that is in none: Changes shows one of them at a time.
+    const repos = changes.repos ?? [];
 
     return html`<div class=${`dr ${wide ? "wide" : ""}`} ref=${ref} tabindex="-1" onKeyDown=${onKey}>
         <div class="dr-summary">
@@ -1495,7 +1569,9 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
                                     </span>`)
                           }
                       </span>`
-                    : html`<span class="muted small">Not a git repository: only Pi's edits are listed.</span>`
+                    : repos.length > 0
+                      ? html`<span class="muted small">Pick a repository under this folder.</span>`
+                      : html`<span class="muted small">Not a git repository: only Pi's edits are listed.</span>`
             }
             ${
                 all.length > 0 &&
@@ -1518,6 +1594,7 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
                 </button>
             </span>
         </div>
+        ${repos.length > 0 && html`<${RepoSwitch} repos=${repos} scope=${changes.scope} onPick=${pick} />`}
         ${
             all.length > 0 &&
             html`<div class="dr-tools">
@@ -1583,11 +1660,12 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
                 <div class="dr-files">
                     ${files.map(
                         (file) => html`<${ReviewFile}
-                            key=${file.path}
+                            key=${`${changes.scope ?? ""}:${file.path}`}
                             id=${id}
                             file=${file}
                             root=${changes.repo.root}
                             base=${changes.repo.head}
+                            repo=${changes.scope}
                             open=${!folded[file.path]}
                             viewedAs=${viewed[file.path]}
                             onToggle=${() => {

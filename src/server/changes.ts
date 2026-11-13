@@ -1,10 +1,11 @@
 /**
  * What changed in a session's folder, to review on a phone: the files Pi wrote or edited in the session (read from
  * its tool calls, so nothing new is stored), and, when the folder is in a git repository, every uncommitted change
- * there, with each file's diff on request.
+ * there, with each file's diff on request. A folder that is in no repository but holds some, as a folder of checkouts
+ * does, is reviewed one of them at a time.
  */
 import { realpathSync } from "node:fs";
-import { lstat, rm } from "node:fs/promises";
+import { lstat, readdir, rm } from "node:fs/promises";
 import { devNull } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { type GitOptions, git as runGit } from "./git.ts";
@@ -40,9 +41,23 @@ export type Changes = {
     more: number;
     /** Files Pi wrote or edited that git shows no change for (committed since, or no repository), with Pi's last call. */
     piOnly: { path: string; entryId: number }[];
+    /**
+     * The repositories right under a folder that is in none, each with how many files changed in it: Changes reviews
+     * one of them at a time. Absent for a folder in a repository, or one that holds no repository.
+     */
+    repos?: RepoChange[];
+    /** The repository under the folder that `repo` and `files` are of, when the folder is in none. */
+    scope?: string;
 };
 
+/** A repository right under the session's folder, and how many files changed in it. */
+export type RepoChange = { name: string; files: number };
+
 const MAX_FILES = 500;
+/** Repositories listed under one folder at most: past these, a folder is not reviewed from here. */
+const MAX_REPOS = 20;
+/** Folders never looked into for repositories: a program's packages, one set for each project. */
+const PACKAGES = new Set(["node_modules"]);
 const MAX_DIFF = 300_000;
 /** Untracked files are counted again on every look, so a larger one keeps its count unknown. */
 const MAX_COUNTED_BYTES = 2_000_000;
@@ -299,6 +314,44 @@ async function versionOf(file: string): Promise<string | undefined> {
 /** Where a folder is in its repository, as git writes paths: `app/` for the folder app, empty at the top. */
 async function prefixOf(cwd: string): Promise<string> {
     return (await git(cwd, ["rev-parse", "--show-prefix"])).trim();
+}
+
+/**
+ * The repositories right under a folder, by name: checkouts that someone made in it, as `~/projects` often holds.
+ * Only one deep, without hidden folders or `node_modules`, and at most `MAX_REPOS`. A folder that is itself in a
+ * repository has no use for them: its changes are the repository's, wherever they are under it.
+ */
+export async function reposUnder(cwd: string): Promise<string[]> {
+    const entries = await readdir(cwd, { withFileTypes: true }).catch(() => []);
+    const names: string[] = [];
+
+    for (const entry of entries) {
+        if (names.length >= MAX_REPOS) {
+            break;
+        }
+
+        if (!entry.isDirectory() || entry.name.startsWith(".") || PACKAGES.has(entry.name)) {
+            continue;
+        }
+
+        // `.git` is a folder in a checkout of its own, and a file in a worktree or a submodule.
+        const repository = await lstat(join(cwd, entry.name, ".git")).then(
+            () => true,
+            () => false,
+        );
+
+        if (repository) {
+            names.push(entry.name);
+        }
+    }
+
+    return names.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+/** How many files changed in a repository: what the list of repositories says, not how many lines. */
+export async function changedFileCount(root: string): Promise<number> {
+    return parseStatus(await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]))
+        .length;
 }
 
 /**

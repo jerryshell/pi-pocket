@@ -525,14 +525,19 @@ export async function conversationRoutes(
     }
 
     if (third === "changes" && fourth === undefined && method === "GET") {
-        return json(response, 200, await app.workspace.changes(id, user));
+        // `repo` names one of the repositories right under a folder that is in none (`workspace.changes`).
+        const repo = url.searchParams.get("repo") || undefined;
+
+        return json(response, 200, await app.workspace.changes(id, user, repo));
     }
 
     if (third === "changes" && fourth === "diff" && method === "GET") {
+        const repo = url.searchParams.get("repo") || undefined;
+
         return send(
             response,
             200,
-            await app.workspace.changeDiff(id, user, url.searchParams.get("path") ?? ""),
+            await app.workspace.changeDiff(id, user, url.searchParams.get("path") ?? "", repo),
             "text/plain; charset=utf-8",
         );
     }
@@ -622,13 +627,15 @@ export async function conversationRoutes(
     }
 
     if (third === "changes" && fourth === "revert" && method === "POST") {
-        const body = await readJson<{ path?: unknown }>(request);
+        const body = await readJson<{ path?: unknown; repo?: unknown }>(request);
 
         if (typeof body.path !== "string" || body.path === "") {
             throw new HttpError(400, "path is required");
         }
 
-        await app.workspace.revertChange(id, user, body.path);
+        const repo = typeof body.repo === "string" && body.repo !== "" ? body.repo : undefined;
+
+        await app.workspace.revertChange(id, user, body.path, repo);
 
         return json(response, 200, { ok: true });
     }

@@ -93,8 +93,12 @@ function ChangesButton() {
     const { changes } = useChanges();
     // Outside a repository Pi's edits are all there is to review (in one, they are what was committed since).
     const files = [...(changes?.files ?? []), ...(changes?.repo ? [] : (changes?.piOnly ?? []))];
+    // A folder that holds repositories: the button counts what changed in all of them, and Changes shows one.
+    const repos = changes?.repos ?? [];
+    const inRepos = repos.reduce((sum, repo) => sum + repo.files, 0);
+    const count = files.length + inRepos + (changes?.more ?? 0);
 
-    if (files.length === 0) {
+    if (count === 0) {
         return null;
     }
 
@@ -102,12 +106,15 @@ function ChangesButton() {
     const added = files.reduce((sum, file) => sum + (file.added ?? 0), 0);
     const removed = files.reduce((sum, file) => sum + (file.removed ?? 0), 0);
     const lines = added > 0 || removed > 0;
-    const count = files.length + (changes.more ?? 0);
     const counted = `${count} ${count === 1 ? "file" : "files"}`;
 
     return html`<button
         class="changes-button"
-        title="Uncommitted changes in this session's folder"
+        title=${
+            repos.length > 0
+                ? "Uncommitted changes in the repositories under this session's folder"
+                : "Uncommitted changes in this session's folder"
+        }
         aria-label=${`Changes: ${counted}${lines ? `, ${added} lines added and ${removed} removed` : ""}`}
         onClick=${() => setFilesOpen(true, "changes")}
     >

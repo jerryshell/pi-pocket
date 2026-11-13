@@ -12,7 +12,7 @@ import {
 } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { FauxResponseStep } from "@earendil-works/pi-ai";
@@ -267,4 +267,59 @@ test("each look finds Pi's edits since the last one, in a fork too", async () =>
     assert.deepEqual(await byPi(fork), ["keep.txt", "notes/todo.md"]);
     await say(app, fork, "write outside");
     assert.deepEqual(await byPi(fork), ["keep.txt", "notes/todo.md", "../outside.txt"]);
+});
+
+test("a folder that holds repositories reviews one of them at a time", async () => {
+    const one = repository("projects/one", { "same.txt": "one\n" });
+    const two = repository("projects/two", { "same.txt": "two\n" });
+    const projects = join(root, "projects");
+
+    // Neighbours that are not reviewed with them: a hidden folder, and a program's packages.
+    mkdirSync(join(projects, ".cache", ".git"), { recursive: true });
+    mkdirSync(join(projects, "node_modules", "pkg", ".git"), { recursive: true });
+    writeFileSync(join(one, "same.txt"), "one\nchanged\n");
+    writeFileSync(join(two, "same.txt"), "two\nchanged\n");
+
+    const id = await newSession(app, projects);
+    const all = await app.workspace.changes(id, owner(app));
+
+    assert.equal(all.repo, undefined, "the folder itself is in no repository");
+    assert.deepEqual(
+        all.repos?.map((repo) => [repo.name, repo.files]),
+        [
+            ["one", 1],
+            ["two", 1],
+        ],
+    );
+    assert.deepEqual(all.files, []);
+
+    const reviewed = await app.workspace.changes(id, owner(app), "two");
+
+    assert.equal(reviewed.scope, "two");
+    assert.equal(reviewed.repo?.root, realpathSync(two));
+    assert.deepEqual(
+        reviewed.files.map((file) => file.path),
+        ["same.txt"],
+    );
+    assert.deepEqual(
+        reviewed.repos?.map((repo) => repo.name),
+        ["one", "two"],
+        "the list stays, to switch",
+    );
+
+    // One file name, two repositories: the scope says which one is meant.
+    assert.match(await app.workspace.changeDiff(id, owner(app), "same.txt", "two"), /^ two$/m);
+    assert.match(await app.workspace.changeDiff(id, owner(app), "same.txt", "one"), /^ one$/m);
+    await assert.rejects(app.workspace.changeDiff(id, owner(app), "same.txt", "missing"), {
+        status: 404,
+    });
+    await assert.rejects(app.workspace.revertChange(id, owner(app), "same.txt", "../two"), {
+        status: 404,
+    });
+
+    // Undoing a file puts back only the repository the review shows.
+    await app.workspace.revertChange(id, owner(app), "same.txt", "two");
+
+    assert.equal(readFileSync(join(two, "same.txt"), "utf8"), "two\n");
+    assert.equal(readFileSync(join(one, "same.txt"), "utf8"), "one\nchanged\n");
 });

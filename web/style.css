@@ -14334,6 +14334,51 @@ textarea.notes {
     font-size: 12px;
 }
 
+/* The repositories right under a folder that is in none: Changes reviews one of them at a time. */
+.dr-repos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 12px 10px;
+}
+
+.dr-repo {
+    height: 28px;
+    max-width: 100%;
+    padding: 0 9px;
+    gap: 6px;
+    border-radius: calc(var(--r-row) - 1px);
+    font-size: 12px;
+}
+
+.dr-repo-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dr-repo-count {
+    flex: none;
+    min-width: 16px;
+    padding: 0 4px;
+    border-radius: var(--r-pill);
+    background: var(--card-2);
+    color: var(--muted);
+    font-size: 11px;
+    text-align: center;
+}
+
+.chip.dr-repo.on {
+    color: var(--accent);
+    border-color: var(--accent-line);
+    background: var(--accent-soft);
+}
+
+.chip.dr-repo.on .dr-repo-count {
+    background: var(--accent);
+    color: var(--bg);
+}
+
 .dr-main {
     display: grid;
     gap: 10px;

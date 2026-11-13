@@ -2695,12 +2695,14 @@ export const actions = {
         ),
     /** A file or folder for the viewer. */
     view: (path) => api(`c/${current()}/view?path=${encodeURIComponent(path)}`),
-    /** What changed in the session's folder: git's uncommitted changes, and Pi's edits. */
-    changes: (id = current()) => api(`c/${id}/changes`),
+    /** What changed in the session's folder: git's uncommitted changes, and Pi's edits; `repo` is one of the
+     * repositories right under a folder that is in none. */
+    changes: (id = current(), repo) =>
+        api(`c/${id}/changes${repo ? `?repo=${encodeURIComponent(repo)}` : ""}`),
     branches: () => api(`c/${current()}/branches`),
     switchBranch: (target) => api(`c/${current()}/branch`, target),
     /** Undo the uncommitted changes to one file. */
-    revert: (path) => api(`c/${current()}/changes/revert`, { path }),
+    revert: (path, repo) => api(`c/${current()}/changes/revert`, repo ? { path, repo } : { path }),
     abort: () => api(`c/${current()}/abort`, {}),
     /** Send the request of a run that waits for its provider's limit now, not at its time. */
     retryLimit: (id = current()) => api(`c/${id}/limit/retry`, {}),
