@@ -301,6 +301,7 @@ export interface BrowsersOptions {
                 target: targetId,
                 context: browserContextId,
                 userAgent: chromium.userAgent,
+                brand: { name: chromium.brand, version: chromium.version },
                 viewport: viewportFrom(saved?.viewport) ??
                     options.viewport ?? { ...VIEWPORTS.desktop },
                 changed: () => this.#changed(conversationId),
