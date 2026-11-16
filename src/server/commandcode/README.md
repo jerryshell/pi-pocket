@@ -2,7 +2,7 @@
 
 Vendored from [`patlux/pi-commandcode-provider`](https://github.com/patlux/pi-commandcode-provider),
 under the MIT license in `LICENSE`. The catalog, the sign-in, and the account's endpoints are
-upstream 0.8.1 (commit `e8ebc6e`); `generate/` is upstream 0.7.12 (commit `0f568ff`), where the
+upstream 0.8.4 (commit `3b60d88`); `generate/` is upstream 0.7.12 (commit `0f568ff`), where the
 `/alpha/generate` client still shipped.
 
 Copied: `models.ts` (the catalog, its cache, each model's wire and thinking levels),
@@ -10,8 +10,9 @@ Copied: `models.ts` (the catalog, its cache, each model's wire and thinking leve
 back to), `api-key.ts` (the stored key), `pricing.ts` (display prices),
 `commandcode-catalog.ts` with `commandcode-catalog-overrides.ts` (Pi's image input,
 reasoning, and output limits per model, from Command Code's CLI catalog at
-`command-code@1.88.5`), and `quota.ts`, `quota-format.ts` and `quota-types.ts` (the
-account's credits and usage windows, with `overflow.ts` for its error text).
+`command-code@1.89.1`), `responses-compat.ts` (two Responses wire repairs the models of
+`zai-org/GLM-5.3` and `mistral/mistral-large-4` need), and `quota.ts`, `quota-format.ts` and
+`quota-types.ts` (the account's credits and usage windows, with `overflow.ts` for its error text).
 
 Pi Pocket adapts it in `../extensions/commandcode.ts`:
 
@@ -28,7 +29,12 @@ Pi Pocket adapts it in `../extensions/commandcode.ts`:
   the Provider API again. `generate/router.ts` holds that decision, and `test/commandcode-generate.test.ts`
   pins it: `403 upgrade_required` falls back, any other 403 does not.
 - The sign-in asks first: paste an API key, or the provider's browser flow, which needs a
-  browser on the server's machine because its callback is a local port.
+  browser on the server's machine because its callback is a local port. A refresh checks the
+  stored key against `whoami` first, as upstream 0.8.4 does: a revoked key fails with
+  `401 invalid_token` instead of coming back with a new expiry.
+- A model on the Responses wire gets two repairs through Pi's `onPayload`, from
+  `responses-compat.ts`, where upstream repairs the body at `fetch`: GLM-5.3 refuses Pi's
+  untagged message items, and GLM-5.3 and Mistral Large 4 refuse `reasoning.effort: "none"`.
 - The catalog refreshes from Menu → Providers → **Refresh models**; the last good catalog
   stays at `<agent-dir>/commandcode-models.json`. A refresh also forgets which path the key
   took, so an account that changed plan asks the Provider API again instead of keeping the
@@ -47,7 +53,8 @@ Pi Pocket adapts it in `../extensions/commandcode.ts`:
 Not included: the Responses stream normalization, upstream's `/commandcode-refresh`,
 `/commandcode-status`, `/commandcode-endpoint`, and `/commandcode-diagnostics` commands (the
 Providers sheet has the refresh), and the request-time DeepSeek peak rates on the Provider API
-path (Pi shows the table's rates; the generate path does apply them).
+path (Pi shows the table's rates; the generate path does apply them). The wire repairs of
+0.8.3 are included, applied to the payload rather than to the request body.
 
 The sign-in checks the callback's origin and state as upstream does (no local development
 origin, and only the page that holds the state token can settle a login, errors included),

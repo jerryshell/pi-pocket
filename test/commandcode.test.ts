@@ -48,6 +48,14 @@ const CACHED = {
             contextWindow: 1_000_000,
             maxTokens: 65_536,
         },
+        {
+            id: "zai-org/GLM-5.3",
+            name: "GLM-5.3 (CC)",
+            api: "openai-responses",
+            reasoning: true,
+            contextWindow: 200_000,
+            maxTokens: 65_536,
+        },
     ],
 };
 
@@ -132,6 +140,8 @@ const ACCOUNT: Record<string, unknown> = {
     },
 };
 const calls: { path: string; authorization: string | undefined }[] = [];
+/** The bodies the Provider API's Responses endpoint received: the wire repairs are read from them. */
+const responses: string[] = [];
 /** Whether the account's endpoints refuse the key, as an expired one does. */
 let accountFails = false;
 
@@ -182,6 +192,26 @@ before(async () => {
         if (path === "/provider/v1/chat/completions") {
             response.writeHead(200, { "content-type": "text/event-stream" });
             response.end(providerStream("from provider"));
+
+            return;
+        }
+
+        // The Responses endpoint keeps the body and refuses it, so a test can read what Pi sent.
+        if (path === "/provider/v1/responses") {
+            let body = "";
+
+            request.on("data", (chunk) => {
+                body += String(chunk);
+            });
+            request.on("end", () => {
+                responses.push(body);
+                response.writeHead(400, { "content-type": "application/json" });
+                response.end(
+                    JSON.stringify({
+                        error: { message: "refused on purpose", type: "invalid_request_error" },
+                    }),
+                );
+            });
 
             return;
         }
@@ -291,6 +321,48 @@ async function streamText(
 
     return text;
 }
+
+test("a Responses call to GLM-5.3 carries message types and no inert reasoning", async () => {
+    const model = app.models.getModel("commandcode", "zai-org/GLM-5.3");
+
+    assert.ok(model, "the cached catalog lists it");
+    responses.length = 0;
+
+    const stream = app.models.streamSimple(
+        model,
+        {
+            systemPrompt: "Be terse.",
+            messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        } as never,
+        { sessionId: crypto.randomUUID() },
+    );
+
+    // The endpoint refuses the request on purpose: the body is what this test reads.
+    for await (const _event of stream) {
+        // Nothing to read here.
+    }
+
+    assert.equal(responses.length, 1, "one request went to the Responses endpoint");
+
+    const body = JSON.parse(responses[0] ?? "{}") as {
+        input?: { type?: string; role?: string }[];
+        reasoning?: unknown;
+    };
+
+    assert.equal(body.reasoning, undefined, "GLM-5.3 refuses reasoning.effort none");
+    assert.ok(
+        Array.isArray(body.input) && body.input.length > 0,
+        "the request carries its input items",
+    );
+    assert.ok(
+        body.input.every((item) => item.type === "message"),
+        "every item that carries a role says it is a message",
+    );
+    assert.ok(
+        body.input.some((item) => item.role === "user"),
+        "and the user turn is still there",
+    );
+});
 
 test("a call streams through Pi's own transport, and the Go plan falls back to the generate endpoint", async () => {
     const model = app.models.getModel("commandcode", "deepseek/deepseek-v4.1-flash");

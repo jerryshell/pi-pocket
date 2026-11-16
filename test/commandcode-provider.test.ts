@@ -7,7 +7,11 @@ import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { getConfiguredApiKey } from "../src/server/commandcode/api-key.ts";
 import { startAuthServer } from "../src/server/commandcode/auth-server.ts";
-import { validateApiKey, validationApiBase } from "../src/server/commandcode/oauth.ts";
+import {
+    refreshToken,
+    validateApiKey,
+    validationApiBase,
+} from "../src/server/commandcode/oauth.ts";
 import { MODEL_COSTS, PRICING_LAST_VERIFIED } from "../src/server/commandcode/pricing.ts";
 
 const folders: string[] = [];
@@ -72,14 +76,19 @@ function close(auth: { server: { listening: boolean; close: () => unknown } }): 
     }
 }
 
-test("the prices carry the stealth preview, the dated Ling preview's list rates, and the ultrafast model's single rate", () => {
-    assert.equal(PRICING_LAST_VERIFIED, "2026-11-09");
-    assert.deepEqual(MODEL_COSTS["stealth/crouton-alpha"], {
+test("the prices carry the free tier's zero rates, the dated Ling preview's list rates, and the ultrafast model's single rate", () => {
+    assert.equal(PRICING_LAST_VERIFIED, "2026-11-13");
+    assert.deepEqual(MODEL_COSTS["thinkingmachines/inkling-2-small:free"], {
         input: 0,
         output: 0,
         cacheRead: 0,
         cacheWrite: 0,
     });
+    assert.equal(
+        MODEL_COSTS["stealth/crouton-alpha"],
+        undefined,
+        "the retired stealth preview is gone",
+    );
     assert.deepEqual(MODEL_COSTS["inclusionai/ling-3.1-flash-1019"], {
         input: 0.3,
         output: 0.9,
@@ -188,6 +197,70 @@ test("a whoami that stalls stops at the deadline, even when fetch ignores the ab
         message: "Could not validate the Command Code API key: request timed out after 20ms",
     });
     assert.ok(Date.now() - started < 5_000, "the deadline ends the wait");
+});
+
+test("a refresh checks the stored key first, then returns it with a new expiry", async () => {
+    const asked: Asked[] = [];
+    const expired = { refresh: "user_abc", access: "user_abc", expires: Date.now() - 1_000 };
+    const refreshed = await refreshToken(expired, undefined, { fetchImpl: answer(200, asked) });
+
+    assert.deepEqual(asked, [
+        { url: "https://api.commandcode.ai/alpha/whoami", authorization: "Bearer user_abc" },
+    ]);
+    assert.equal(refreshed.access, "user_abc");
+    assert.equal(refreshed.refresh, "user_abc");
+    assert.ok(refreshed.expires > Date.now(), "the expiry moves into the future");
+});
+
+test("a refresh of a revoked key fails with 401 invalid_token, as Oh My Pi signs it out on", async () => {
+    await assert.rejects(
+        refreshToken({ refresh: "user_stale", access: "user_stale", expires: 0 }, undefined, {
+            fetchImpl: answer(401, []),
+        }),
+        (error: unknown) =>
+            error instanceof Error &&
+            /\b401\b/.test(error.message) &&
+            /invalid_token/.test(error.message),
+    );
+});
+
+test("a refresh fails without those words when whoami is down, so the key is not signed out", async () => {
+    await assert.rejects(
+        refreshToken({ refresh: "user_abc", access: "user_abc", expires: 0 }, undefined, {
+            fetchImpl: answer(503, []),
+        }),
+        (error: unknown) => error instanceof Error && !/\b401\b|invalid_token/.test(error.message),
+    );
+});
+
+test("a cancelled refresh stops the probe, and still says neither 401 nor invalid_token", async () => {
+    const host = new AbortController();
+    let probe: AbortSignal | undefined;
+    const refresh = refreshToken(
+        { refresh: "user_abc", access: "user_abc", expires: 0 },
+        host.signal,
+        {
+            fetchImpl: ((_input: unknown, init?: RequestInit) => {
+                probe = init?.signal ?? undefined;
+
+                return new Promise<Response>(() => {});
+            }) as unknown as typeof fetch,
+        },
+    );
+
+    host.abort();
+    await assert.rejects(
+        refresh,
+        (error: unknown) => error instanceof Error && !/\b401\b|invalid_token/.test(error.message),
+    );
+    assert.equal(probe?.aborted, true, "the probe it already started was aborted");
+
+    await assert.rejects(
+        refreshToken({ refresh: "user_abc", access: "user_abc", expires: 0 }, AbortSignal.abort(), {
+            fetchImpl: answer(200, []),
+        }),
+        (error: unknown) => error instanceof Error && !/\b401\b|invalid_token/.test(error.message),
+    );
 });
 
 test("the callback refuses a local development origin", async () => {

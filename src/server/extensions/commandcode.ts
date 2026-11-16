@@ -62,6 +62,7 @@ import { MODEL_COSTS, ZERO_MODEL_COST } from "../commandcode/pricing.ts";
 import { formatQuota } from "../commandcode/quota-format.ts";
 import { fetchCommandCodeQuota, redactValue } from "../commandcode/quota.ts";
 import type { CommandCodeQuota, CommandCodeQuotaResult } from "../commandcode/quota-types.ts";
+import { repairResponsesPayload } from "../commandcode/responses-compat.ts";
 import type { ExtensionWeb, PocketHost, WebRequest } from "../host.ts";
 
 /** A chat model's config: the union `models` takes narrows to this one by its required `reasoning`. */
@@ -149,6 +150,29 @@ function compatForModel(model: CommandCodeModel): ChatModelConfig["compat"] {
         supportsDeveloperRole: false,
         supportsReasoningEffort: MODEL_EFFORTS[model.id] !== undefined,
         maxTokensField: "max_tokens",
+    };
+}
+
+/**
+ * Pi's payload hook with Command Code's Responses repairs on top: GLM-5.3 refuses Pi's untagged message items, and
+ * GLM-5.3 and Mistral Large 4 refuse `reasoning.effort: "none"`. The caller's own hook runs first, so the repair sees
+ * what actually goes out.
+ */
+function repairedStreamOptions(
+    modelId: string,
+    wire: CommandCodeModel["api"],
+    options: SimpleStreamOptions | undefined,
+): SimpleStreamOptions | undefined {
+    if (wire !== "openai-responses") {
+        return options;
+    }
+
+    const caller = options?.onPayload;
+
+    return {
+        ...options,
+        onPayload: async (payload, model) =>
+            repairResponsesPayload((await caller?.(payload, model)) ?? payload, modelId),
     };
 }
 
@@ -284,12 +308,15 @@ export default async function createCommandCode(
     /** One request: Pi's transport for the model's wire, and the generate endpoint when the account has no API access. */
     const router = createCommandCodeTransportRouter<Model<Api>, TranscriptContext>({
         createStream,
-        streamProvider: (model, context, options) =>
-            streamNative(
-                { ...model, api: wires.get(model.id) ?? DEFAULT_WIRE },
+        streamProvider: (model, context, options) => {
+            const wire = wires.get(model.id) ?? DEFAULT_WIRE;
+
+            return streamNative(
+                { ...model, api: wire },
                 context,
-                options as SimpleStreamOptions | undefined,
-            ) as unknown as GenerateStream,
+                repairedStreamOptions(model.id, wire, options as SimpleStreamOptions | undefined),
+            ) as unknown as GenerateStream;
+        },
         streamGenerate: (model, context, options) =>
             generateStream(model, generateContext(context), options),
     });
@@ -320,7 +347,8 @@ export default async function createCommandCode(
         oauth: {
             name: "Command Code",
             login: commandCodeLogin,
-            refreshToken: async (credentials) => refreshToken(credentials as OAuthCredentials),
+            refreshToken: async (credentials, signal) =>
+                refreshToken(credentials as OAuthCredentials, signal),
             getApiKey,
         },
         refreshModels: async (context) => {
