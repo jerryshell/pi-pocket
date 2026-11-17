@@ -5,7 +5,7 @@
  */
 import { readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { parseStatus } from "./changes.ts";
+import { parseStatus, parseTrack, type Upstream } from "./changes.ts";
 import { git as runGit, GitError } from "./git.ts";
 
 /** What a folder has checked out: a branch (one with no commits yet included), or a commit with no branch. */
@@ -18,7 +18,7 @@ export type LocalBranch = {
     at?: number;
     subject?: string;
     /** The remote branch it follows: how far ahead and behind it is, or `gone` when the remote branch was deleted. */
-    upstream?: { name: string; ahead: number; behind: number; gone: boolean };
+    upstream?: Upstream;
     /** The folder of another worktree that has it checked out: git switches to it only there. */
     worktree?: string;
 };
@@ -108,15 +108,6 @@ export function headOf(gitDir: string): Head | undefined {
     return /^[0-9a-f]{40,64}$/.test(head) ? { detached: head.slice(0, 7) } : undefined;
 }
 
-/** `%(upstream:track,nobracket)`: "ahead 2, behind 1", "gone", or nothing when it is even. */
-function readTrack(track: string): { ahead: number; behind: number; gone: boolean } {
-    return {
-        ahead: Number(/ahead (\d+)/.exec(track)?.[1] ?? 0),
-        behind: Number(/behind (\d+)/.exec(track)?.[1] ?? 0),
-        gone: track === "gone",
-    };
-}
-
 /** The branches of the repository `cwd` is in, for the branch sheet. */
 export async function branchesIn(cwd: string): Promise<Branches> {
     const gitDir = gitDirOf(cwd);
@@ -161,7 +152,7 @@ export async function branchesIn(cwd: string): Promise<Branches> {
                 current,
                 at: Number(at) * 1000,
                 subject,
-                ...(upstream === "" ? {} : { upstream: { name: upstream, ...readTrack(track) } }),
+                ...(upstream === "" ? {} : { upstream: { name: upstream, ...parseTrack(track) } }),
                 // Checked out in another worktree, as this folder's own branch is in this one.
                 ...(worktree === "" || current ? {} : { worktree }),
             });

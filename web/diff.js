@@ -8,7 +8,7 @@ import { jumpToEntry } from "./chat.js";
 import { fingerprint, firstLine, hunkRows, markRanges, parseDiff } from "./diff-parse.js";
 import { highlight, highlightLines, langOf } from "./highlight.js";
 import { personStorage } from "./person-storage.js";
-import { branchAvailable } from "./sheets/branch.js";
+import { branchAvailable, Track, upstreamWords } from "./sheets/branch.js";
 import { actions, attempt, canSteer, notify, openSheet, store } from "./store.js";
 import { html, Icon, Loader, openFile, shortPath, timeAgo } from "./ui.js";
 
@@ -1295,7 +1295,7 @@ function ReviewFile({
 
 /**
  * The repositories right under a folder that is in none, as a row of chips: Changes reviews one of them at a time,
- * and each chip says how many files changed in it.
+ * and each chip says what it has checked out, how far that is from its remote, and how many files changed in it.
  */
 function RepoSwitch({ repos, scope, onPick }) {
     return html`<div class="dr-repos" role="tablist" aria-label="Repositories under this folder">
@@ -1306,14 +1306,27 @@ function RepoSwitch({ repos, scope, onPick }) {
                 role="tab"
                 aria-selected=${repo.name === scope ? "true" : "false"}
                 class=${`chip dr-repo ${repo.name === scope ? "on" : ""}`}
-                title=${`${repo.files} ${repo.files === 1 ? "file" : "files"} to review in ${repo.name}`}
+                title=${repoTitle(repo)}
                 onClick=${() => onPick(repo.name)}
             >
                 <span class="dr-repo-name">${repo.name}</span>
+                ${repo.branch !== undefined && html`<span class="dr-repo-branch">${repo.branch}</span>`}
+                <${Track} upstream=${repo.upstream} />
                 ${repo.files > 0 && html`<span class="dr-repo-count">${repo.files}</span>`}
             </button>`,
         )}
     </div>`;
+}
+
+/** What a repository's chip says when pointed at: its branch and how far from its remote, and what waits there. */
+function repoTitle(repo) {
+    const files = `${repo.files} ${repo.files === 1 ? "file" : "files"} to review`;
+    const branch =
+        repo.branch === undefined
+            ? ""
+            : `${repo.branch}, ${repo.upstream === undefined ? "no upstream" : upstreamWords(repo.upstream)}, `;
+
+    return `${repo.name}: ${branch}${files}`;
 }
 
 /**
@@ -1715,7 +1728,7 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
                                         <${Icon} name="fork" size=${12} />
                                         ${changes.repo.branch}
                                     </span>`)
-                          }
+                          }<${Track} upstream=${changes.repo.upstream} />
                       </span>`
                     : repos.length > 0
                       ? html`<span class="muted small">Pick a repository under this folder.</span>`

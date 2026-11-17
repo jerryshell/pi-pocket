@@ -51,19 +51,36 @@ function whyNot() {
     return null;
 }
 
+/** How far a branch is from its upstream, in words: "2 ahead of origin/main", or "origin/main is gone". */
+export function upstreamWords({ name, ahead, behind, gone }) {
+    if (gone) {
+        return `${name} is gone`;
+    }
+
+    if (ahead > 0 && behind > 0) {
+        return `${ahead} ahead, ${behind} behind ${name}`;
+    }
+
+    if (ahead > 0) {
+        return `${ahead} ahead of ${name}`;
+    }
+
+    return behind > 0 ? `${behind} behind ${name}` : `even with ${name}`;
+}
+
 /** How far a branch is from the remote branch it follows, as ↑2 ↓1, or that the remote branch is gone. */
-function Track({ upstream }) {
+export function Track({ upstream }) {
     if (!upstream) {
         return null;
     }
 
     if (upstream.gone) {
-        return html`<span class="branch-track warn" title=${`${upstream.name} is gone`}>gone</span>`;
+        return html`<span class="branch-track warn" title=${upstreamWords(upstream)}>gone</span>`;
     }
 
     return (
         (upstream.ahead > 0 || upstream.behind > 0) &&
-        html`<span class="branch-track" title=${`Against ${upstream.name}`}>
+        html`<span class="branch-track" title=${upstreamWords(upstream)}>
             ${upstream.ahead > 0 ? `↑${upstream.ahead}` : ""}${upstream.ahead > 0 && upstream.behind > 0 ? " " : ""}${upstream.behind > 0 ? `↓${upstream.behind}` : ""}
         </span>`
     );

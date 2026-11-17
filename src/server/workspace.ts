@@ -24,12 +24,12 @@ import {
 } from "./branches.ts";
 import {
     type Changes,
-    changedFileCount,
     changesIn,
     commitDiffIn,
     diffOf,
     editFacts,
     type RepoChange,
+    repoState,
     revertFile,
     reposUnder,
 } from "./changes.ts";
@@ -41,7 +41,7 @@ import type { ClientEntry } from "./projection.ts";
 
 /** How many sessions' Pi edits are kept between looks at Changes (`#edits`). */
 const EDITS_KEPT = 64;
-/** How long the repositories under a folder, and their file counts, are kept: every tab asks, often together. */
+/** How long the repositories under a folder, with their branches and file counts, are kept: every tab asks, often together. */
 const REPOS_KEPT = 3000;
 
 export class Workspace {
@@ -79,7 +79,7 @@ export class Workspace {
     readonly #edits = new Map<ConversationId, { last: number; entries: ClientEntry[] }>();
 
     /**
-     * The repositories right under each folder, and how many files changed in each, for a few seconds: every tab that
+     * The repositories right under each folder, with their branches and file counts, for a few seconds: every tab that
      * shows a session asks for them, often together, and each one takes a `git status`.
      */
     readonly #repos = new Map<string, { repos: RepoChange[]; at: number }>();
@@ -565,8 +565,9 @@ export class Workspace {
     }
 
     /**
-     * The repositories right under a folder, with how many files changed in each, kept for a few seconds: every tab
-     * that shows the session asks, and each repository takes a `git status`. The list comes back in name order.
+     * The repositories right under a folder, with their branches and how many files changed in each, kept for a few
+     * seconds: every tab that shows the session asks, and each repository takes a `git status`. The list comes back in
+     * name order.
      */
     #reposUnder(cwd: string): Promise<RepoChange[]> {
         const known = this.#repos.get(cwd);
@@ -586,8 +587,8 @@ export class Workspace {
             const repos = await Promise.all(
                 names.map(async (name): Promise<RepoChange> => ({
                     name,
-                    // A look that fails says nothing changed: the file counts are a hint, not a report.
-                    files: await changedFileCount(join(cwd, name)).catch(() => 0),
+                    // A look that fails says nothing changed: the branch and the counts are a hint, not a report.
+                    ...(await repoState(join(cwd, name)).catch(() => ({ files: 0 }))),
                 })),
             );
 

@@ -15072,6 +15072,16 @@ textarea.notes {
     text-overflow: ellipsis;
 }
 
+/* The branch a repository has checked out, in the chips' small mono type, cut short before the counts. */
+.dr-repo-branch {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--faint);
+    font: 0.7rem var(--mono);
+}
+
 .dr-repo-count {
     flex: none;
     min-width: 16px;

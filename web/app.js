@@ -97,8 +97,11 @@ function ChangesButton() {
     const repos = changes?.repos ?? [];
     const inRepos = repos.reduce((sum, repo) => sum + repo.files, 0);
     const count = files.length + inRepos + (changes?.more ?? 0);
+    // Such a folder keeps its list a tap away even with nothing changed: the chips show each repository's branch and
+    // what waits on its remote.
+    const reposNamed = `${repos.length} ${repos.length === 1 ? "repo" : "repos"}`;
 
-    if (count === 0) {
+    if (count === 0 && repos.length === 0) {
         return null;
     }
 
@@ -106,15 +109,17 @@ function ChangesButton() {
     const added = files.reduce((sum, file) => sum + (file.added ?? 0), 0);
     const removed = files.reduce((sum, file) => sum + (file.removed ?? 0), 0);
     const lines = added > 0 || removed > 0;
-    const counted = `${count} ${count === 1 ? "file" : "files"}`;
+    const counted = count > 0 ? `${count} ${count === 1 ? "file" : "files"}` : reposNamed;
+    const title =
+        repos.length === 0
+            ? "Uncommitted changes in this session's folder"
+            : count > 0
+              ? "Uncommitted changes in the repositories under this session's folder"
+              : "The repositories under this session's folder: their branches, and what waits on their remotes";
 
     return html`<button
         class="changes-button"
-        title=${
-            repos.length > 0
-                ? "Uncommitted changes in the repositories under this session's folder"
-                : "Uncommitted changes in this session's folder"
-        }
+        title=${title}
         aria-label=${`Changes: ${counted}${lines ? `, ${added} lines added and ${removed} removed` : ""}`}
         onClick=${() => setFilesOpen(true, "changes")}
     >

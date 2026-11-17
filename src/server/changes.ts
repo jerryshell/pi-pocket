@@ -32,10 +32,11 @@ export type ChangedFile = {
 
 export type Changes = {
     /**
-     * The repository the folder is in, absent when it is in none: its top folder, its branch, and `head`, the last
-     * commit's id, which the diffs are against. Both are absent before the first commit.
+     * The repository the folder is in, absent when it is in none: its top folder, its branch (the one to come before
+     * the first commit), how far that is from its remote branch, and `head`, the last commit's id, which the diffs are
+     * against. `head` is absent before the first commit, and `upstream` until the branch follows a remote one.
      */
-    repo?: { root: string; branch?: string; head?: string };
+    repo?: { root: string; branch?: string; upstream?: Upstream; head?: string };
     files: ChangedFile[];
     /** Changed files left out of `files`, past the most it lists. */
     more: number;
@@ -50,8 +51,18 @@ export type Changes = {
     scope?: string;
 };
 
-/** A repository right under the session's folder, and how many files changed in it. */
-export type RepoChange = { name: string; files: number };
+/** How far a branch is from the remote branch it follows: `gone` when that branch was deleted there. */
+export type Upstream = { name: string; ahead: number; behind: number; gone: boolean };
+
+/** A repository right under the session's folder: what it has checked out, and how many files changed in it. */
+export type RepoChange = {
+    name: string;
+    files: number;
+    /** The branch checked out (the one to come before the first commit too); absent with a commit checked out. */
+    branch?: string;
+    /** The remote branch that one follows, and how far apart they are. */
+    upstream?: Upstream;
+};
 
 const MAX_FILES = 500;
 /** Repositories listed under one folder at most: past these, a folder is not reviewed from here. */
@@ -256,6 +267,11 @@ export function parseStatus(output: string): { code: string; path: string; from?
     for (let at = 0; at < fields.length; at++) {
         const field = fields[at]!;
 
+        // `git status --branch` puts the branch first: "## master...origin/master [ahead 1]".
+        if (field.startsWith("## ")) {
+            continue;
+        }
+
         if (field.length < 4) {
             continue;
         }
@@ -348,10 +364,69 @@ export async function reposUnder(cwd: string): Promise<string[]> {
     return names.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
-/** How many files changed in a repository: what the list of repositories says, not how many lines. */
-export async function changedFileCount(root: string): Promise<number> {
-    return parseStatus(await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]))
-        .length;
+/** How far a branch is from its upstream, as git writes it: "ahead 2, behind 1", or "gone". */
+export function parseTrack(track: string): Omit<Upstream, "name"> {
+    return {
+        ahead: Number(/ahead (\d+)/.exec(track)?.[1] ?? 0),
+        behind: Number(/behind (\d+)/.exec(track)?.[1] ?? 0),
+        gone: track === "gone",
+    };
+}
+
+/**
+ * A `git status --porcelain=v1 --branch` header, such as "## master...origin/master [ahead 1]", as a branch and the
+ * remote branch it follows. Before the first commit git names the branch to come; a commit checked out names none.
+ */
+function readStatusHead(header: string): { branch?: string; upstream?: Upstream } {
+    if (!header.startsWith("## ")) {
+        return {};
+    }
+
+    const text = header.slice(3);
+
+    // "HEAD (no branch)": a commit is checked out, so there is no branch to name.
+    if (text === "HEAD (no branch)") {
+        return {};
+    }
+
+    const unborn = /^No commits yet on (.+)$/.exec(text);
+
+    if (unborn !== null) {
+        return { branch: unborn[1]! };
+    }
+
+    // A branch name cannot hold "..", so the first "..." is the one before its upstream.
+    const tracked = / \[(.*)\]$/.exec(text);
+    const rest = tracked === null ? text : text.slice(0, tracked.index);
+    const at = rest.indexOf("...");
+
+    if (at === -1) {
+        return { branch: rest };
+    }
+
+    return {
+        branch: rest.slice(0, at),
+        upstream: { name: rest.slice(at + 3), ...parseTrack(tracked?.[1] ?? "") },
+    };
+}
+
+/**
+ * What a repository right under a folder says in the list of them: how many files changed, the branch checked out, and
+ * how far that is from the remote branch it follows. One `git status` reads all three.
+ */
+export async function repoState(root: string): Promise<Omit<RepoChange, "name">> {
+    const status = await git(root, [
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--branch",
+        "--untracked-files=all",
+    ]);
+
+    return {
+        files: parseStatus(status).length,
+        ...readStatusHead(status.slice(0, status.indexOf("\0"))),
+    };
 }
 
 /**
@@ -378,18 +453,20 @@ export async function changesIn(
     }
 
     const edits = piEdits(entries, cwd, true);
-    const branch = await git(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]).then(
-        (name) => name.trim(),
-        () => undefined,
-    );
     const head = await git(root, ["rev-parse", "--verify", "--quiet", "HEAD"]).then(
         (id) => id.trim() || undefined,
         () => undefined,
     );
     const prefix = onlyHere ? await prefixOf(cwd) : "";
-    const changed = parseStatus(
-        await git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]),
-    ).filter(({ path }) => path.startsWith(prefix));
+    const output = await git(root, [
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--branch",
+        "--untracked-files=all",
+    ]);
+    const { branch, upstream } = readStatusHead(output.slice(0, output.indexOf("\0")));
+    const changed = parseStatus(output).filter(({ path }) => path.startsWith(prefix));
     const status = changed.slice(0, MAX_FILES);
     // Without a first commit there is nothing to compare with: every file is new.
     const counts =
@@ -455,6 +532,7 @@ export async function changesIn(
         repo: {
             root,
             ...(branch === undefined ? {} : { branch }),
+            ...(upstream === undefined ? {} : { upstream }),
             ...(head === undefined ? {} : { head }),
         },
         files,

@@ -273,6 +273,28 @@ test("a folder that holds repositories reviews one of them at a time", async () 
     const one = repository("projects/one", { "same.txt": "one\n" });
     const two = repository("projects/two", { "same.txt": "two\n" });
     const projects = join(root, "projects");
+    const git = (cwd: string, ...args: string[]) =>
+        execFileSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=T", ...args], {
+            cwd,
+            encoding: "utf8",
+        }).trim();
+
+    // A remote for each: `one` has a commit to push, and `two`'s remote branch is gone.
+    const branch = git(one, "rev-parse", "--abbrev-ref", "HEAD");
+
+    for (const [name, folder] of [
+        ["one", one],
+        ["two", two],
+    ] as const) {
+        const remote = join(root, "remotes", `${name}.git`);
+
+        git(root, "init", "-q", "--bare", remote);
+        git(folder, "remote", "add", "origin", remote);
+        git(folder, "push", "-q", "-u", "origin", "HEAD");
+    }
+
+    git(one, "commit", "-q", "--allow-empty", "-m", "to push");
+    git(two, "update-ref", "-d", `refs/remotes/origin/${branch}`);
 
     // Neighbours that are not reviewed with them: a hidden folder, and a program's packages.
     mkdirSync(join(projects, ".cache", ".git"), { recursive: true });
@@ -285,11 +307,12 @@ test("a folder that holds repositories reviews one of them at a time", async () 
 
     assert.equal(all.repo, undefined, "the folder itself is in no repository");
     assert.deepEqual(
-        all.repos?.map((repo) => [repo.name, repo.files]),
+        all.repos?.map((repo) => [repo.name, repo.files, repo.branch, repo.upstream]),
         [
-            ["one", 1],
-            ["two", 1],
+            ["one", 1, branch, { name: `origin/${branch}`, ahead: 1, behind: 0, gone: false }],
+            ["two", 1, branch, { name: `origin/${branch}`, ahead: 0, behind: 0, gone: true }],
         ],
+        "each repository's branch, and how far it is from its remote",
     );
     assert.deepEqual(all.files, []);
 
@@ -297,6 +320,13 @@ test("a folder that holds repositories reviews one of them at a time", async () 
 
     assert.equal(reviewed.scope, "two");
     assert.equal(reviewed.repo?.root, realpathSync(two));
+    assert.equal(reviewed.repo?.branch, branch);
+    assert.deepEqual(reviewed.repo?.upstream, {
+        name: `origin/${branch}`,
+        ahead: 0,
+        behind: 0,
+        gone: true,
+    });
     assert.deepEqual(
         reviewed.files.map((file) => file.path),
         ["same.txt"],
