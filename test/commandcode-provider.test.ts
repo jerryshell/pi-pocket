@@ -1,5 +1,5 @@
 // The vendored Command Code provider's own units (`src/server/commandcode/`): the sign-in callback's origin and
-// state, how a pasted key is validated, where credentials are read, and the prices upstream 0.7.12 added.
+// state, how a pasted key is validated, where credentials are read, the catalog's model facts, and its prices.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,7 +12,16 @@ import {
     validateApiKey,
     validationApiBase,
 } from "../src/server/commandcode/oauth.ts";
+import {
+    commandCodeModelsFromApiResponse,
+    inputModalitiesForModel,
+    MODEL_EFFORTS,
+    MODEL_MAX_OUTPUT_TOKENS,
+    MODEL_REASONING,
+    thinkingMetadataForModel,
+} from "../src/server/commandcode/models.ts";
 import { MODEL_COSTS, PRICING_LAST_VERIFIED } from "../src/server/commandcode/pricing.ts";
+import { zdrEnabled } from "../src/server/commandcode/zdr.ts";
 
 const folders: string[] = [];
 
@@ -77,7 +86,25 @@ function close(auth: { server: { listening: boolean; close: () => unknown } }): 
 }
 
 test("the prices carry the free tier's zero rates, the dated Ling preview's list rates, and the ultrafast model's single rate", () => {
-    assert.equal(PRICING_LAST_VERIFIED, "2026-11-13");
+    assert.equal(PRICING_LAST_VERIFIED, "2026-11-17");
+    assert.deepEqual(MODEL_COSTS["recursive/flint-v1.0:free"], {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+    });
+    assert.deepEqual(MODEL_COSTS["tencent/hy4-flash"], {
+        input: 0.07,
+        output: 0.281,
+        cacheRead: 0.003,
+        cacheWrite: 0,
+    });
+    assert.deepEqual(MODEL_COSTS["Qwen/Qwen4-Max"], {
+        input: 1.5,
+        output: 4.5,
+        cacheRead: 0.075,
+        cacheWrite: 1.875,
+    });
     assert.deepEqual(MODEL_COSTS["thinkingmachines/inkling-2-small:free"], {
         input: 0,
         output: 0,
@@ -110,6 +137,54 @@ test("the prices carry the free tier's zero rates, the dated Ling preview's list
         MODEL_COSTS["poolside/laguna-s-2.1-free"],
         undefined,
         "the retired free poolside entry is gone",
+    );
+});
+
+test("the CLI 1.89.2 catalog adds Qwen 4 Max, Hy4 Flash, and Flint with their own facts", () => {
+    const added = [
+        {
+            id: "Qwen/Qwen4-Max",
+            input: ["text", "image"],
+            efforts: ["off", "low", "high", "xhigh"],
+        },
+        { id: "tencent/hy4-flash", input: ["text", "image"], efforts: ["off", "high"] },
+        { id: "recursive/flint-v1.0:free", input: ["text"], efforts: undefined },
+    ];
+
+    for (const { id, input, efforts } of added) {
+        assert.deepEqual(inputModalitiesForModel(id), input);
+        assert.equal(MODEL_REASONING[id], true);
+        assert.deepEqual(MODEL_EFFORTS[id], efforts);
+        assert.deepEqual(thinkingMetadataForModel(id)?.thinking?.efforts, efforts);
+        assert.ok(thinkingMetadataForModel(id), "reasoning metadata is registered");
+        assert.equal(MODEL_MAX_OUTPUT_TOKENS[id], undefined, "the default output limit applies");
+
+        const models = commandCodeModelsFromApiResponse({
+            object: "list",
+            data: [
+                {
+                    id,
+                    name: id,
+                    context_length: 1_000_000,
+                    supported_endpoints: ["/chat/completions", "/responses"],
+                },
+            ],
+        });
+
+        assert.equal(models[0]?.api, "openai-responses", "the API advertises Responses");
+        assert.equal(models[0]?.maxTokens, 65_536);
+    }
+});
+
+test("zero data retention is on by default, and off only when the owner says so", () => {
+    assert.equal(zdrEnabled({}), true);
+    assert.equal(zdrEnabled({ CMD_ZDR: "1" }), true, "the old opt-in still means on");
+    assert.equal(zdrEnabled({ CMD_ZDR: "0" }), false);
+    assert.equal(zdrEnabled({ COMMANDCODE_ZDR: "0" }), false);
+    assert.equal(
+        zdrEnabled({ CMD_ZDR: "1", COMMANDCODE_ZDR: "0" }),
+        false,
+        "the explicit opt-out wins",
     );
 });
 

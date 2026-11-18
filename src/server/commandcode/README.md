@@ -2,7 +2,7 @@
 
 Vendored from [`patlux/pi-commandcode-provider`](https://github.com/patlux/pi-commandcode-provider),
 under the MIT license in `LICENSE`. The catalog, the sign-in, and the account's endpoints are
-upstream 0.8.4 (commit `3b60d88`); `generate/` is upstream 0.7.12 (commit `0f568ff`), where the
+upstream 0.8.6 (commit `c8c12bd`); `generate/` is upstream 0.7.12 (commit `0f568ff`), where the
 `/alpha/generate` client still shipped.
 
 Copied: `models.ts` (the catalog, its cache, each model's wire and thinking levels),
@@ -10,9 +10,11 @@ Copied: `models.ts` (the catalog, its cache, each model's wire and thinking leve
 back to), `api-key.ts` (the stored key), `pricing.ts` (display prices),
 `commandcode-catalog.ts` with `commandcode-catalog-overrides.ts` (Pi's image input,
 reasoning, and output limits per model, from Command Code's CLI catalog at
-`command-code@1.89.1`), `responses-compat.ts` (two Responses wire repairs the models of
-`zai-org/GLM-5.3` and `mistral/mistral-large-4` need), and `quota.ts`, `quota-format.ts` and
-`quota-types.ts` (the account's credits and usage windows, with `overflow.ts` for its error text).
+`command-code@1.89.2`), `responses-compat.ts` (two Responses body repairs the models of
+`zai-org/GLM-5.3` and `mistral/mistral-large-4` need, and the stream trait of the model whose
+thinking arrives as plaintext `encrypted_content`), `responses-stream.ts` (the Responses
+reasoning-frame adapter), and `quota.ts`, `quota-format.ts` and `quota-types.ts` (the account's
+credits and usage windows, with `overflow.ts` for its error text).
 
 Pi Pocket adapts it in `../extensions/commandcode.ts`:
 
@@ -32,9 +34,21 @@ Pi Pocket adapts it in `../extensions/commandcode.ts`:
   browser on the server's machine because its callback is a local port. A refresh checks the
   stored key against `whoami` first, as upstream 0.8.4 does: a revoked key fails with
   `401 invalid_token` instead of coming back with a new expiry.
-- A model on the Responses wire gets two repairs through Pi's `onPayload`, from
+- Zero data retention is on by default: every Provider API inference request carries
+  `x-cmd-zdr: 1`, as the [Provider API docs](https://commandcode.ai/docs/markdown/provider/index.md)
+  document, and so do the account reads behind `/commandcode-quota`. `CMD_ZDR=0` (or its
+  `COMMANDCODE_ZDR` alias) turns it off; while it is on, a model with no ZDR-capable upstream
+  fails with `422 cmd_zdr_no_providers` instead of reaching a non-ZDR provider. The
+  `/alpha/generate` fallback is Command Code's own endpoint, not the Provider API: it gets no
+  such header, and its taste learning stays off while ZDR is on.
+- A model on the Responses wire gets two body repairs through Pi's `onPayload`, from
   `responses-compat.ts`, where upstream repairs the body at `fetch`: GLM-5.3 refuses Pi's
   untagged message items, and GLM-5.3 and Mistral Large 4 refuse `reasoning.effort: "none"`.
+- The same wire gets its response frames through `fetch`, from `responses-stream.ts`: Command
+  Code's non-standard `response.reasoning.delta` becomes the canonical reasoning-text delta,
+  and GLM-5.3's plaintext `encrypted_content` becomes thinking just before its reasoning item
+  completes, only for the model `modelWireTraits` names (for OpenAI models that field is real
+  ciphertext). Both run only for `/responses` models, on top of any `fetch` the caller passed.
 - The catalog refreshes from Menu → Providers → **Refresh models**; the last good catalog
   stays at `<agent-dir>/commandcode-models.json`. A refresh also forgets which path the key
   took, so an account that changed plan asks the Provider API again instead of keeping the
@@ -50,11 +64,11 @@ Pi Pocket adapts it in `../extensions/commandcode.ts`:
   owner-only routes, `GET usage` and `POST usage` (`{ fresh: true }` skips a 30-second
   cached answer).
 
-Not included: the Responses stream normalization, upstream's `/commandcode-refresh`,
-`/commandcode-status`, `/commandcode-endpoint`, and `/commandcode-diagnostics` commands (the
-Providers sheet has the refresh), and the request-time DeepSeek peak rates on the Provider API
-path (Pi shows the table's rates; the generate path does apply them). The wire repairs of
-0.8.3 are included, applied to the payload rather than to the request body.
+Not included: upstream's `/commandcode-refresh`, `/commandcode-status`, `/commandcode-endpoint`,
+and `/commandcode-diagnostics` commands (the Providers sheet has the refresh), and the
+request-time DeepSeek peak rates on the Provider API path (Pi shows the table's rates; the
+generate path does apply them). The wire repairs of 0.8.3 and the stream repairs of 0.8.6 are
+included: body repairs through `onPayload`, stream repairs through `fetch`.
 
 The sign-in checks the callback's origin and state as upstream does (no local development
 origin, and only the page that holds the state token can settle a login, errors included),

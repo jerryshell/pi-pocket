@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+    modelWireTraits,
     repairResponsesPayload,
     RESPONSES_WIRE_REPAIRS,
 } from "../src/server/commandcode/responses-compat.ts";
@@ -20,6 +21,24 @@ function payload(model = "zai-org/GLM-5.3", extra: Record<string, unknown> = {})
         ...extra,
     };
 }
+
+test("the stream trait is on only for the model whose reasoning item was measured", () => {
+    assert.deepEqual(modelWireTraits("zai-org/GLM-5.3"), { plaintextReasoningContent: true });
+
+    for (const modelId of [
+        "mistral/mistral-large-4",
+        "z-ai/glm-5.3-flash",
+        "z-ai/glm-5.3-flashx",
+        "gpt-6-sol",
+        "",
+    ]) {
+        assert.deepEqual(
+            modelWireTraits(modelId),
+            { plaintextReasoningContent: false },
+            `${modelId || "<empty>"} stays opt-out until a capture shows the shape`,
+        );
+    }
+});
 
 test("the repair list holds exactly the models proven to need one", () => {
     assert.deepEqual(Object.keys(RESPONSES_WIRE_REPAIRS).sort(), [

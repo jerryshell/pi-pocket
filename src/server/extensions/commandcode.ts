@@ -4,8 +4,9 @@
  *
  * Vendored from `patlux/pi-commandcode-provider` (`src/server/commandcode/`): the catalog, its cache, the sign-in,
  * and the account's endpoints. Streaming goes through Pi's own OpenAI Chat Completions, OpenAI Responses, and
- * Anthropic Messages transports, which the catalog chooses for each model; an account the Provider API refuses (the
- * Go plan) is served by Command Code's own `/alpha/generate` endpoint instead, whose client lives beside the rest.
+ * Anthropic Messages transports, which the catalog chooses for each model; the Responses transport gets its reasoning
+ * frames repaired on the way back, and an account the Provider API refuses (the Go plan) is served by Command Code's
+ * own `/alpha/generate` endpoint instead, whose client lives beside the rest.
  */
 import type { ProviderConfig } from "@earendil-works/pi-coding-agent";
 import {
@@ -62,7 +63,9 @@ import { MODEL_COSTS, ZERO_MODEL_COST } from "../commandcode/pricing.ts";
 import { formatQuota } from "../commandcode/quota-format.ts";
 import { fetchCommandCodeQuota, redactValue } from "../commandcode/quota.ts";
 import type { CommandCodeQuota, CommandCodeQuotaResult } from "../commandcode/quota-types.ts";
-import { repairResponsesPayload } from "../commandcode/responses-compat.ts";
+import { modelWireTraits, repairResponsesPayload } from "../commandcode/responses-compat.ts";
+import { normalizeCommandCodeResponsesResponse } from "../commandcode/responses-stream.ts";
+import { zdrEnabled } from "../commandcode/zdr.ts";
 import type { ExtensionWeb, PocketHost, WebRequest } from "../host.ts";
 
 /** A chat model's config: the union `models` takes narrows to this one by its required `reasoning`. */
@@ -116,11 +119,9 @@ function accountApiBase(providerApiBase: string): string {
     return providerApiBase.replace(/\/provider\/v1\/?$/, "");
 }
 
-/** Command Code's headers: zero-data-retention when the owner asked for it (`CMD_ZDR=1`). */
+/** Command Code's headers: zero-data-retention on every request, unless the owner turned it off (`CMD_ZDR=0`). */
 function commandCodeHeaders(): Record<string, string> | undefined {
-    return process.env.CMD_ZDR === "1" || process.env.COMMANDCODE_ZDR === "1"
-        ? { "x-cmd-zdr": "1" }
-        : undefined;
+    return zdrEnabled() ? { "x-cmd-zdr": "1" } : undefined;
 }
 
 /**
@@ -156,7 +157,9 @@ function compatForModel(model: CommandCodeModel): ChatModelConfig["compat"] {
 /**
  * Pi's payload hook with Command Code's Responses repairs on top: GLM-5.3 refuses Pi's untagged message items, and
  * GLM-5.3 and Mistral Large 4 refuse `reasoning.effort: "none"`. The caller's own hook runs first, so the repair sees
- * what actually goes out.
+ * what actually goes out. The fetch it returns does the response side the payload cannot: Command Code's non-standard
+ * reasoning frames become canonical, and a model that sends its thinking as plaintext `encrypted_content` gets it as
+ * reasoning text before the item completes (`responses-stream.ts`).
  */
 function repairedStreamOptions(
     modelId: string,
@@ -168,11 +171,18 @@ function repairedStreamOptions(
     }
 
     const caller = options?.onPayload;
+    const callerFetch = options?.fetch;
 
     return {
         ...options,
         onPayload: async (payload, model) =>
             repairResponsesPayload((await caller?.(payload, model)) ?? payload, modelId),
+        fetch: async (input, init) =>
+            normalizeCommandCodeResponsesResponse(
+                await (callerFetch ?? globalThis.fetch)(input, init),
+                undefined,
+                { plaintextReasoningContent: modelWireTraits(modelId).plaintextReasoningContent },
+            ),
     };
 }
 

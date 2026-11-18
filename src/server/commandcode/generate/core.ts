@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { COMMAND_CODE_CLI_VERSION } from "../commandcode-catalog.ts";
 import { commandCodeErrorMessage, redactCommandCodeErrorText } from "../overflow.ts";
 import { modelSupportsImageInput } from "../models.ts";
+import { zdrEnabled } from "../zdr.ts";
 import {
     getApiKey,
     getEnvironmentInfo,
@@ -186,10 +187,10 @@ function mappedReasoningEffort(model: ModelLike, options?: StreamOptions): strin
  * server-side taste learning. The official CLI sends its `tasteLearning`
  * setting on every request (default on). This extension never reads the
  * learned profile back, so learning is off unless the user enables it, and
- * always off under the zero-data-retention flag.
+ * always off while zero data retention is on, which it is by default.
  */
 export function tasteLearningEnabled(env: NodeJS.ProcessEnv): boolean {
-    if (env.CMD_ZDR === "1" || env.COMMANDCODE_ZDR === "1") {
+    if (zdrEnabled(env)) {
         return false;
     }
 

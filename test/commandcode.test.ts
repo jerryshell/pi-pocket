@@ -100,6 +100,44 @@ function providerStream(text: string): string {
     );
 }
 
+/** Whether the Responses endpoint answers with a stream instead of refusing the body. */
+let responsesStream = false;
+/** The plaintext reasoning a Responses stream carries on its completed reasoning item. */
+const GLM_TEXT = "Three r's in strawberry.";
+
+/** A Responses stream as GLM-5.3 sends one: its thinking only on the completed reasoning item. */
+function reasoningStream(): string {
+    const item = {
+        id: "rs_glm",
+        type: "reasoning",
+        summary: [] as unknown[],
+        encrypted_content: GLM_TEXT,
+    };
+    const frame = (event: unknown): string => `data: ${JSON.stringify(event)}\n\n`;
+
+    return (
+        frame({
+            type: "response.output_item.added",
+            output_index: 0,
+            item: { ...item, encrypted_content: undefined },
+        }) +
+        frame({ type: "response.output_item.done", output_index: 0, item }) +
+        frame({
+            type: "response.completed",
+            response: {
+                id: "resp_glm",
+                status: "completed",
+                output: [item],
+                usage: {
+                    input_tokens: 3,
+                    output_tokens: 2,
+                    total_tokens: 5,
+                },
+            },
+        })
+    );
+}
+
 /** Command Code's own generate stream: its events, one `data:` line each. */
 function generateStream(text: string): string {
     return [
@@ -139,7 +177,7 @@ const ACCOUNT: Record<string, unknown> = {
         periodStart: "2026-10-01T00:00:00.000Z",
     },
 };
-const calls: { path: string; authorization: string | undefined }[] = [];
+const calls: { path: string; authorization: string | undefined; zdr: string | undefined }[] = [];
 /** The bodies the Provider API's Responses endpoint received: the wire repairs are read from them. */
 const responses: string[] = [];
 /** Whether the account's endpoints refuse the key, as an expired one does. */
@@ -165,7 +203,11 @@ before(async () => {
     server = createServer((request, response) => {
         const path = new URL(request.url ?? "/", "http://commandcode.test").pathname;
 
-        calls.push({ path, authorization: request.headers.authorization });
+        calls.push({
+            path,
+            authorization: request.headers.authorization,
+            zdr: request.headers["x-cmd-zdr"]?.toString(),
+        });
 
         if (accountFails && path.startsWith("/alpha/")) {
             response.writeHead(401, { "content-type": "application/json" });
@@ -196,7 +238,8 @@ before(async () => {
             return;
         }
 
-        // The Responses endpoint keeps the body and refuses it, so a test can read what Pi sent.
+        // The Responses endpoint keeps the body and refuses it, so a test can read what Pi sent; when the account says
+        // so, it instead streams the reasoning item GLM-5.3 sends.
         if (path === "/provider/v1/responses") {
             let body = "";
 
@@ -205,6 +248,14 @@ before(async () => {
             });
             request.on("end", () => {
                 responses.push(body);
+
+                if (responsesStream) {
+                    response.writeHead(200, { "content-type": "text/event-stream" });
+                    response.end(reasoningStream());
+
+                    return;
+                }
+
                 response.writeHead(400, { "content-type": "application/json" });
                 response.end(
                     JSON.stringify({
@@ -343,6 +394,7 @@ test("a Responses call to GLM-5.3 carries message types and no inert reasoning",
     }
 
     assert.equal(responses.length, 1, "one request went to the Responses endpoint");
+    assert.equal(calls.at(-1)?.zdr, "1", "zero data retention is on by default");
 
     const body = JSON.parse(responses[0] ?? "{}") as {
         input?: { type?: string; role?: string }[];
@@ -362,6 +414,34 @@ test("a Responses call to GLM-5.3 carries message types and no inert reasoning",
         body.input.some((item) => item.role === "user"),
         "and the user turn is still there",
     );
+});
+
+test("GLM-5.3's plaintext reasoning arrives as thinking through the stream repair", async () => {
+    const model = app.models.getModel("commandcode", "zai-org/GLM-5.3");
+
+    assert.ok(model, "the cached catalog lists it");
+    responses.length = 0;
+    responsesStream = true;
+
+    try {
+        const stream = app.models.streamSimple(
+            model,
+            { messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }] } as never,
+            { sessionId: crypto.randomUUID() },
+        );
+        let thinking = "";
+
+        for await (const event of stream) {
+            if (event.type === "thinking_delta") {
+                thinking += event.delta;
+            }
+        }
+
+        assert.equal(thinking, GLM_TEXT, "the item's plaintext content is shown as thinking");
+        assert.equal(responses.length, 1, "one request went to the Responses endpoint");
+    } finally {
+        responsesStream = false;
+    }
 });
 
 test("a call streams through Pi's own transport, and the Go plan falls back to the generate endpoint", async () => {
