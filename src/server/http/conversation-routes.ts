@@ -613,6 +613,18 @@ export async function conversationRoutes(
         }
     }
 
+    // Delete an artifact and every version of it (`app.deleteArtifact`): only someone who steers, never a viewer.
+    if (
+        third === "artifacts" &&
+        fourth !== undefined &&
+        parts.length === 4 &&
+        method === "DELETE"
+    ) {
+        await app.deleteArtifact(id, user, fourth);
+
+        return json(response, 200, { ok: true });
+    }
+
     // An artifact published to anyone with its address: the shares of this session, and ending one.
     if (third === "shares" && fourth === undefined && method === "GET") {
         // The address others reach this server by, as webhooks give it: a tunnel's, when one is up.

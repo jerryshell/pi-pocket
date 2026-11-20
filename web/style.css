@@ -1717,6 +1717,16 @@ kbd {
     height: 24px;
 }
 
+.icon-button.danger {
+    color: var(--faint);
+}
+
+@media (hover: hover) {
+    .icon-button.danger:hover {
+        color: var(--err);
+    }
+}
+
 .badge-host .badge,
 .icon-button .count {
     position: absolute;
@@ -22057,17 +22067,36 @@ pre.gallery-code {
 .overview-row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    width: 100%;
-    padding: 10px 14px;
+    gap: 2px;
     border-top: 1px solid var(--hair);
-    text-align: left;
+    padding-right: 6px;
     color: var(--faint);
+}
+
+.overview-open {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+    padding: 10px 6px 10px 14px;
+    text-align: left;
+    color: inherit;
 }
 
 @media (hover: hover) {
     .overview-row:hover {
         background: var(--card);
+    }
+}
+
+.overview-delete {
+    color: var(--faint);
+}
+
+@media (hover: hover) {
+    .overview-delete:hover {
+        color: var(--err);
     }
 }
 

@@ -63,6 +63,8 @@ import {
     ArtifactBodyDoc,
     type ArtifactMeta,
     ArtifactsDoc,
+    ArtifactSharesDoc,
+    ArtifactStateDoc,
     type ArtifactType,
     AuthorsDoc,
     BackgroundDoc,
@@ -71,6 +73,7 @@ import {
     ChatDoc,
     type ChatMessage,
     DecisionsDoc,
+    DesignCommentsDoc,
     FolderFavoritesDoc,
     MemoryDoc,
     PurgeDoc,
@@ -3651,6 +3654,59 @@ export class PocketApp {
         );
 
         return { ...found, assets };
+    }
+
+    /**
+     * Delete an artifact for good: every version and body, what its pages saved for people, its design notes, and the
+     * links that published it. Only someone who steers may; a viewer reads. Its assets stay: bytes are addressed by
+     * their content hash, and another artifact may use the same ones.
+     */
+    async deleteArtifact(id: ConversationId, user: User, artifact: string): Promise<void> {
+        this.requireSteer(user);
+
+        const removed = await this.harness.commit(async (tx) => {
+            const doc = await tx.doc(ArtifactsDoc, id);
+            const current = Object.hasOwn(doc.items, artifact)
+                ? (doc.items[artifact] as ArtifactMeta)
+                : undefined;
+
+            if (current === undefined) {
+                return undefined;
+            }
+
+            const title = current.title;
+
+            delete doc.items[artifact];
+
+            for (const version of current.versions) {
+                await tx.retireDoc(ArtifactBodyDoc, id, `${artifact}@${version.version}`);
+            }
+
+            const states = await tx.doc(ArtifactStateDoc, id);
+
+            delete states.items[artifact];
+
+            const designs = await tx.doc(DesignCommentsDoc, id);
+
+            delete designs.items[artifact];
+
+            // A deleted artifact's links answer nothing, and do not count toward the session's limit.
+            const shares = await tx.doc(ArtifactSharesDoc);
+
+            for (const [token, share] of Object.entries(shares.items)) {
+                if (share.id === artifact && share.conversation === String(id)) {
+                    delete shares.items[token];
+                }
+            }
+
+            return title;
+        }, context);
+
+        if (removed === undefined) {
+            throw new HttpError(404, "No such artifact");
+        }
+
+        await this.collab.activity(id, user, `removed the artifact “${snippet(removed, 80)}”`);
     }
 
     /** The folder a conversation works in. */

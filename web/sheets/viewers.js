@@ -77,14 +77,57 @@ export function ArtifactViewer({ id, version }) {
     });
     const [shown, setShown] = useState(version ?? artifact?.versions.at(-1)?.version);
     const [nonce, setNonce] = useState(0);
+    const seen = useRef(artifact !== undefined);
+    const removed = useRef(false);
     const latest = artifact?.versions.at(-1)?.version;
+
+    // A viewer open when someone deletes the artifact closes: there is nothing left to show.
+    useEffect(() => {
+        if (artifact === undefined) {
+            if (seen.current && !removed.current) {
+                closeSheet();
+                notify("info", `The artifact “${id}” was deleted.`);
+            }
+
+            return;
+        }
+
+        seen.current = true;
+    }, [artifact, id]);
+
     const theme = artifact?.type === "markdown" ? themeQuery() : "";
     const src = `/a/${view.conversation.id}/${encodeURIComponent(id)}/${shown ?? "latest"}${theme}`;
     // A published page is out of the reach of an invite to one session, so only those who see every session publish.
     const shareable = me?.role !== "viewer" && me?.sessions === undefined && me?.role !== undefined;
+    const removable = me?.role !== undefined && me.role !== "viewer";
     // The Design canvas (a built-in module) shows an HTML page with its versions, comments, and tweaks.
     const designable =
         artifact?.type === "html" && browserModuleState("design")?.status === "ready";
+
+    const remove = () => {
+        const title = artifact?.title ?? id;
+        const count = artifact?.versions.length ?? 1;
+        const what = count === 1 ? "Its only version" : `All ${count} versions`;
+
+        if (
+            !confirm(
+                `Delete “${title}”? ${what}, the state saved for its pages, and its share links go too. This cannot be undone.`,
+            )
+        ) {
+            return;
+        }
+
+        removed.current = true;
+        attempt(async () => {
+            await api(`c/${view.conversation.id}/artifacts/${encodeURIComponent(id)}`, undefined, {
+                method: "DELETE",
+            });
+            closeSheet();
+            notify("info", `Deleted “${title}”.`);
+        }).finally(() => {
+            removed.current = false;
+        });
+    };
 
     const openInDesign = () => {
         dispatchEvent(
@@ -144,6 +187,18 @@ export function ArtifactViewer({ id, version }) {
                 </button>`
             }
             <a class="button small" href=${src} target="_blank" rel="noopener">Open tab</a>
+            ${
+                removable &&
+                artifact &&
+                html`<button
+                    class="icon-button danger"
+                    title="Delete this artifact"
+                    aria-label="Delete this artifact"
+                    onClick=${remove}
+                >
+                    <${Icon} name="trash" size=${18} />
+                </button>`
+            }
             <button class="icon-button" onClick=${closeSheet} aria-label="Close">
                 <${Icon} name="close" />
             </button>
