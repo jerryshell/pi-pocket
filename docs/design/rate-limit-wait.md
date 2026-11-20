@@ -190,7 +190,7 @@ Separate commits (C17: core first, extension last):
 7. Later: `host.limitResets` and the gallery user.
 8. Later, upstream: pi-ai and Pi Durable requests from section 5.
 
-Checks for every commit: `npm run check`, `npm run lint`, `npm test`, `npm run format`.
+Checks for every commit: `npm run check`, `npm run lint`, and the tests [self-editing.md](../self-editing.md#checking-a-change) asks for; `npm run format`.
 
 ## What was built differently
 

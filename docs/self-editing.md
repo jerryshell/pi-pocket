@@ -24,16 +24,45 @@ So a change to an extension module and to other server code goes live in two par
 - **Other server code:** run `npm run check`.
 - **A page in `docs/`:** a new page needs a row in `docs-site/src/sidebar.mjs`, or the docs build fails. To check the links, anchors, and the reference, run `cd docs-site && npm ci && npm run check` (the site's own packages, never at the root). The root `npm run check` also checks that the reference and `types/pocket.d.ts` agree.
 
-Then, before you say that the change is done:
+## Checking a change
+
+Before you say that the change is done:
 
 ```sh
-npm run format   # Prettier and ESLint's fixes
+npm run format     # Prettier and ESLint's fixes
 npm run lint
-npm run check    # TypeScript
-npm test         # every test; the browser tests need Chromium; over half an hour
+npm run check      # TypeScript
+npm run test:core  # every test but the app-level browser tests
+npm run test:ui    # the app-level browser tests alone
+npm test           # every test; the browser tests need Chromium; over half an hour
 ```
 
-`npm test` is the slow one: over half an hour for the whole suite. While you work, run the tests of the part that you changed (`node --test test/<name>.test.ts`). Run all of them before you say that the change is done, or before you ask for a restart. The one exception is merging a patch release from upstream (`git diff --name-only v0.28.1 v0.28.2 -- test/`): there, `npm run check`, `npm run lint`, and the tests the release touches are enough, since most of what it changes is version strings. If you do not run a check, say which.
+`npm test` is the slow one: over half an hour for the whole suite, most of it `npm run test:ui`. While you work, run the tests of the part that you changed (`node --test test/<name>.test.ts`). What to run before you say that the change is done depends on what it touches:
+
+- **A shared entry point: `npm test`.** A change there reaches parts with tests of their own, and the changed feature's tests do not run those. The shared entry points are `src/server/app.ts`, `src/server/config.ts`, `src/server/auth.ts`, `src/server/docs.ts`, `src/server/room.ts`, `src/server/projection.ts`, `src/server/commands.ts`, `src/server/collab.ts`, `src/server/host.ts`, `src/server/reload.ts`, `src/server/extension-web.ts`, `src/server/models.ts`, `src/server/main.ts`, `src/server/http/*`, `bin/*`, `src/launcher/*`, `package.json`, and the web app's own `web/store.js`, `web/app.js`, `web/ui.js`, `web/sheets.js`, and `web/style.css`.
+- **One feature, and nothing above: its own tests, and its UI tests when it has any.** Find them by the module's name, then every test file that imports it: `grep -l "server/share.ts" test/*.test.ts`. The table below has the common areas. A change that leaves that feature's files (a shared helper, another feature's module) is a shared change, and is `npm test`.
+- **More than one feature, with no shared file: `npm run test:core`, plus the UI tests of what changed.** `test:core` runs every file but the app-level browser tests (`*-ui.test.ts` and `browser.test.ts`), so it is the broad check that does not need Chromium. Some other files keep one browser test inside, which skips itself when `findBrowser` finds none (`artifact-bundles.test.ts`, for one).
+- **A push or a release: `npm test`**, whatever moved: there is no CI behind a push in this repository.
+- **A patch release merge from upstream** (`git diff --name-only v0.28.1 v0.28.2 -- test/`): `npm run check`, `npm run lint`, and the tests the release touches are enough, since most of what it changes is version strings.
+- **A small upstream sync of the vendored `src/server/commandcode/` provider:** `test/commandcode*.test.ts`.
+
+If you do not run a check, say which.
+
+**Finding the tests.** The table says where to start; a test file that imports the module you changed belongs in the run too.
+
+| Change                                              | Where to start                                                                                                                                                                                  |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Artifacts, their saved state, and their share links | `test/artifact-*.test.ts`, `test/shares.test.ts`                                                                                                                                                |
+| Design, its canvas, and the design system           | `test/design-*.test.ts`                                                                                                                                                                         |
+| Sessions, branches, worktrees, and the session list | `test/session*.test.ts`, `test/branches.test.ts`, `test/worktrees.test.ts`                                                                                                                      |
+| Transcript, chat, notes, and peeks                  | `test/projection.test.ts`, `test/entry-presentation*.test.ts`, `test/turns.test.ts`, `test/activity-fold.test.ts`, `test/quote-*.test.ts`, `test/notes-draft-ui.test.ts`, `test/peeks*.test.ts` |
+| Models, providers, and limits                       | `test/model-*.test.ts`, `test/providers.test.ts`, `test/custom-providers.test.ts`, `test/default-model.test.ts`, `test/limits*.test.ts`, `test/limit-*.test.ts`                                 |
+| Extensions, drop-ins, and the gallery               | `test/extension-*.test.ts`, `test/extensions-hub-ui.test.ts`, `test/dropins.test.ts`, `test/gallery*.test.ts`                                                                                   |
+| Relay                                               | `test/relay*.test.ts`                                                                                                                                                                           |
+| Files, uploads, and images                          | `test/files.test.ts`, `test/download.test.ts`, `test/read-body.test.ts`, `test/images.test.ts`, `test/read-image-ui.test.ts`                                                                    |
+| Hooks, schedules, triggers, and PR watches          | `test/hooks*.test.ts`, `test/schedules*.test.ts`, `test/triggers.test.ts`, `test/repo-watches.test.ts`                                                                                          |
+| Launcher, updates, and packages                     | `test/launcher-*.test.ts`, `test/updates*.test.ts`, `test/npm-*.test.ts`, `test/boot-failure-ui.test.ts`                                                                                        |
+| The app's own web modules and sheets                | their `test/*-ui.test.ts`, when they have one; `npm run test:ui` runs them all                                                                                                                  |
 
 Keep [map.md](map.md), [architecture.md](architecture.md), and [features.md](features.md) true. When a change moves code, adds a dependency between parts, or changes what people see, update them in the same change.
 
@@ -61,7 +90,7 @@ The copy listens on `127.0.0.2:8899`. Browsers keep cookies for each host, not f
 
 Server changes outside `extensions/` need a restart. Only the owner can restart, from Menu → **Restart server**. This menu item shows when Pi Pocket runs under its launcher, as `pi-pocket` does.
 
-- **Never restart while your own tool call runs**, and never on your own. Finish the edit, run `npm run check` and `npm test`, and then ask the person to restart.
+- **Never restart while your own tool call runs**, and never on your own. Finish the edit, run `npm run check` and the tests [above](#checking-a-change) ask for, and then ask the person to restart.
 - Work that runs continues after a restart. A tool call that the restart stopped, and that is not safe to repeat, comes back to the model as interrupted.
 - A server that does not start stops Pi Pocket for everyone, and you cannot correct it from the app. The launcher tries again and again, more slowly each time, and prints the error in its terminal. A correction of the file is enough: the next try uses it. While an update from the app is under way, the launcher goes back to the version before instead.
 - Changes that are not committed stop an update from the app (Menu → Update Pi Pocket): commit them, or put them aside with `git stash`, first.
