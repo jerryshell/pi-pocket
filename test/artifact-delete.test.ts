@@ -1,69 +1,58 @@
-// Deleting an artifact: every version, its saved state, design notes, and share links, over the route and in the app.
-import {
-    type App,
-    cleanUp,
-    context,
-    openApp,
-    owner,
-    root,
-    scriptedModel,
-    until,
-    work,
-} from "./helpers.ts";
+import { type App, cleanUp, context, openApp, owner, say, scriptedModel, work } from "./helpers.ts";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { mkdtempSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { after, before, test } from "node:test";
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { Browsers } from "../src/server/browser.ts";
-import { findBrowser } from "../src/server/browser/discovery.ts";
 import {
     ArtifactAssetDoc,
     ArtifactBodyDoc,
-    ArtifactStateDoc,
     ArtifactsDoc,
+    ArtifactStateDoc,
     DesignCommentsDoc,
 } from "../src/server/docs.ts";
+import * as artifacts from "../src/server/artifacts.ts";
 import createArtifacts from "../src/server/extensions/artifacts.ts";
 import type { PocketHost } from "../src/server/host.ts";
-import { createHandler } from "../src/server/http.ts";
+import { root } from "./helpers.ts";
 
+const dataDir = join(root, "data");
 let app: App;
 let server: Server;
-let base: string;
+let port = 0;
 let calls = 0;
 
 before(async () => {
-    app = await openApp(scriptedModel());
-    app.config.lastModel ??= { provider: "faux", modelId: "faux-1", thinkingLevel: "off" };
-    server = createServer(
-        createHandler({ app, listen: { host: "127.0.0.1", port: 0 }, restart: () => {} }),
+    app = await openApp(scriptedModel(), dataDir);
+
+    const { createHandler } = await import("../src/server/http.ts");
+
+    // Through `app` as it is now: the last test opens it again.
+    server = createServer((request, response) =>
+        createHandler({ app, listen: { host: "127.0.0.1", port: 0 }, restart: () => {} })(
+            request,
+            response,
+        ),
     );
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    port = (server.address() as { port: number }).port;
 });
 
 after(async () => {
-    server?.closeAllConnections();
-    server?.close();
-    await app?.close();
+    server.closeAllConnections();
+    server.close();
+    await app.close();
     cleanUp();
 });
 
-async function newSession(): Promise<ConversationId> {
-    const { id } = await app.commands.createSession(owner(app), { cwd: work });
-
-    return id;
-}
-
-async function publish(session: ConversationId, args: Record<string, unknown>) {
-    return createArtifacts({} as PocketHost).tools![0]!.execute(
-        args as never,
+async function publish(id: ConversationId, content: string, more: object = {}): Promise<number> {
+    const tool = createArtifacts({} as PocketHost).tools![0]!;
+    const result = await tool.execute(
+        { id: "demo", title: "Demo", content, ...more } as never,
         {
-            conversationId: session,
-            taskId: 9000 + (calls += 1),
+            conversationId: id,
+            taskId: 8000 + (calls += 1),
             callId: "publish",
             agent: async () => ({ cwd: work }),
             snapshot: app.harness.snapshot.bind(app.harness),
@@ -71,181 +60,206 @@ async function publish(session: ConversationId, args: Record<string, unknown>) {
         } as never,
         context,
     );
+
+    return (result.details as { version: number }).version;
 }
 
-/** Delete as the person with `token`: the status and the JSON. */
-async function remove(token: string, session: ConversationId, artifact: string) {
-    const response = await fetch(
-        `${base}/api/c/${session}/artifacts/${encodeURIComponent(artifact)}`,
-        {
-            method: "DELETE",
-            headers: { authorization: `Bearer ${token}`, "x-pocket": "1" },
+async function session(): Promise<ConversationId> {
+    app.config.lastModel ??= { provider: "faux", modelId: "faux-1", thinkingLevel: "off" };
+
+    return (await app.commands.createSession(owner(app), { cwd: work })).id;
+}
+
+async function call(token: string, method: string, path: string, body?: unknown) {
+    const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+        method,
+        headers: {
+            authorization: `Bearer ${token}`,
+            "x-pocket": "1",
+            "content-type": "application/json",
         },
-    );
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
 
-    return { status: response.status, json: (await response.json()) as Record<string, unknown> };
+    return { status: response.status, text: await response.text() };
 }
 
-test("delete takes every version, state, design notes, and links, and leaves the other artifacts", async () => {
-    const session = await newSession();
-    const other = await newSession();
-    const asset = createHash("sha256").update("hello").digest("hex");
+const body = async (id: ConversationId, version: number) =>
+    (await app.harness.snapshot(ArtifactBodyDoc, id, `demo@${version}`, context))?.content;
 
-    await publish(session, {
-        id: "demo",
-        title: "Demo",
-        content: "<p>one</p>",
-        assets: [{ name: "note.txt", content: "hello" }],
-    });
-    await publish(session, { id: "demo", title: "Demo", content: "<p>two</p>" });
-    await publish(session, { id: "other", title: "Other", content: "<p>other</p>" });
-    await publish(other, { id: "demo", title: "Elsewhere", content: "<p>elsewhere</p>" });
+test("a delete takes every version, link, saved state, and comment at once; viewers may not; a fork keeps its copy", async () => {
+    const id = await session();
+    const me = app.config.ownerToken;
+    const viewer = app.config.addUser("Vee", "viewer");
 
-    await app.harness.commit(async (tx) => {
-        const states = await tx.doc(ArtifactStateDoc, session);
+    try {
+        await publish(id, "<h1>one</h1>");
+        await publish(id, "<h1>two</h1>", { assets: [{ name: "a.txt", content: "forked bytes" }] });
 
-        states.items.demo = {
-            [owner(app).id]: { value: { open: true }, at: 1 },
-        };
+        const share = await app.shares.create(id, owner(app), { id: "demo" });
 
-        const designs = await tx.doc(DesignCommentsDoc, session);
+        await call(me, "POST", `/api/c/${id}/artifact-state/demo`, { state: { kept: 1 } });
+        await app.harness.commit(async (tx) => {
+            (await tx.doc(DesignCommentsDoc, id)).items.demo = { comments: [] };
+        }, context);
+        await say(app, id, "hello");
 
-        designs.items.demo = { comments: [] };
-    }, context);
+        const last = (await app.transcripts.allEntries(id, false)).at(-1)!;
+        const fork = await app.commands.fork(id, owner(app), { entryId: last.id });
 
-    const share = await app.shares.create(session, owner(app), { id: "demo" });
-    const result = await remove(app.config.ownerToken, session, "demo");
+        assert.equal(
+            (await call(viewer.token, "DELETE", `/api/c/${id}/artifacts/demo`)).status,
+            403,
+        );
+        assert.equal((await app.artifactBody(id, "demo")).content, "<h1>two</h1>");
 
-    assert.equal(result.status, 200);
-    assert.deepEqual(result.json, { ok: true });
-
-    // Every version's page is gone: the route, the store, and retried requests say so.
-    await assert.rejects(app.artifactBody(session, "demo"), /No such artifact/);
-    assert.equal(
-        await app.harness.snapshot(ArtifactBodyDoc, session, "demo@1", context),
-        undefined,
-    );
-    assert.equal(
-        await app.harness.snapshot(ArtifactBodyDoc, session, "demo@2", context),
-        undefined,
-    );
-    assert.equal((await remove(app.config.ownerToken, session, "demo")).status, 404);
-
-    // What its pages saved and Design kept for it goes too, so the id starts clean if it comes back.
-    const states = await app.harness.snapshot(ArtifactStateDoc, session, context);
-
-    assert.equal(states?.items.demo, undefined);
-
-    const designs = await app.harness.snapshot(DesignCommentsDoc, session, context);
-
-    assert.equal(designs?.items.demo, undefined);
-
-    // Its links are ended, not left to count toward the session's limit.
-    assert.deepEqual(await app.shares.list(session, owner(app)), []);
-
-    const published = await fetch(`${base}${share.path}`);
-
-    assert.equal(published.status, 404);
-
-    // Its bytes stay: they are addressed by content, and another artifact may use the same ones.
-    assert.notEqual(await app.harness.snapshot(ArtifactAssetDoc, asset, context), undefined);
-
-    // The same id in another session, and the other artifact here, are untouched.
-    assert.equal((await app.artifactBody(other, "demo")).content, "<p>elsewhere</p>");
-    assert.equal((await app.artifactBody(session, "other")).content, "<p>other</p>");
-
-    const items = (await app.harness.snapshot(ArtifactsDoc, session, context))?.items;
-
-    assert.deepEqual(Object.keys(items ?? {}), ["other"]);
-
-    const list = await app.artifactOverview(owner(app));
-
-    assert.ok(!list.some((entry) => entry.session === Number(session) && entry.id === "demo"));
-    assert.ok(list.some((entry) => entry.session === Number(session) && entry.id === "other"));
-});
-
-test("only someone who steers deletes, and a missing or unshared artifact is not found", async () => {
-    const session = await newSession();
-    const elsewhere = await newSession();
-
-    await publish(session, { id: "demo", title: "Demo", content: "<p>demo</p>" });
-
-    const viewer = app.config.addUser("Viewer", "viewer", [String(session)]).token;
-
-    assert.equal((await remove(viewer, session, "demo")).status, 403);
-
-    const stranger = app.config.addUser("Stranger", "guest", [String(elsewhere)]).token;
-
-    assert.equal((await remove(stranger, session, "demo")).status, 404);
-    assert.equal((await remove(app.config.ownerToken, session, "missing")).status, 404);
-
-    // A viewer's refusal left it there.
-    assert.equal((await app.artifactBody(session, "demo")).content, "<p>demo</p>");
-});
-
-test(
-    "All artifacts has a trash button for each row that deletes it after a confirmation",
-    { skip: findBrowser() === undefined ? "no Chromium-based browser on this machine" : false },
-    async () => {
-        const session = await newSession();
-
-        await publish(session, { id: "trash-me", title: "Trash me", content: "<p>gone</p>" });
-
-        const browsers = new Browsers({
-            dataDir: mkdtempSync(join(root, "artifact-delete-ui-")),
-            load: async () => undefined,
-            save: () => {},
-        });
+        const scoped = app.config.addUser("Sam", "guest", [String(fork.id)]);
 
         try {
-            const page = await browsers.open(1);
-            const inPage = async <T>(script: string) =>
-                JSON.parse(await page.evaluate(script)) as T;
-
-            await page.navigate(`${base}/login?token=${encodeURIComponent(app.config.ownerToken)}`);
-            await page.navigate(`${base}/s/${session}`);
-            await until(
-                async () =>
-                    await inPage<boolean>(
-                        `return JSON.stringify(document.querySelector(".composer") !== null)`,
-                    ),
-                "the session",
-            );
-            await inPage(
-                `(await import("/store.js")).openSheet({ type: "all-artifacts" }); return "null"`,
-            );
-            await until(
-                async () =>
-                    await inPage<boolean>(
-                        `return JSON.stringify(document.querySelector(".overview-delete") !== null)`,
-                    ),
-                "the row's delete button",
-            );
-
-            // The page's confirm is accepted by itself (a headless page cannot answer one).
-            await inPage(`document.querySelector(".overview-delete").click(); return "null"`);
-            await until(
-                async () =>
-                    !(await app.artifactOverview(owner(app))).some(
-                        (entry) => entry.session === Number(session),
-                    ),
-                "the deletion",
-            );
-
-            const stillListed = async () =>
-                await inPage<boolean>(`
-                    return JSON.stringify([...document.querySelectorAll(".overview-row")].some((row) => row.textContent.includes("Trash me")));
-                `);
-
-            await until(async () => !(await stillListed()), "the row to go");
-
-            assert.equal(await stillListed(), false);
             assert.equal(
-                await app.artifactBody(session, "trash-me").catch(() => undefined),
-                undefined,
+                (await call(scoped.token, "DELETE", `/api/c/${id}/artifacts/demo`)).status,
+                404,
+                "a guest of another session",
             );
         } finally {
-            await browsers.closeAll({ final: true });
+            app.config.removeUser(scoped.user.id);
         }
-    },
-);
+
+        const done = await call(me, "DELETE", `/api/c/${id}/artifacts/demo`);
+
+        assert.equal(done.status, 200, done.text);
+        assert.deepEqual(JSON.parse(done.text), { versions: 2 });
+        await assert.rejects(app.artifactBody(id, "demo"), /No such artifact/);
+        assert.equal((await call(me, "GET", `/a/${id}/demo/1`)).status, 404);
+        assert.equal(await app.shares.open(share.token), undefined);
+        assert.equal((await fetch(`http://127.0.0.1:${port}${share.path}`)).status, 404);
+        assert.equal(
+            (await app.harness.snapshot(ArtifactStateDoc, id, context))?.items.demo,
+            undefined,
+        );
+        assert.equal(
+            (await app.harness.snapshot(DesignCommentsDoc, id, context))?.items.demo,
+            undefined,
+        );
+        assert.equal(await body(id, 1), undefined);
+        assert.equal(await body(id, 2), undefined);
+        assert.equal((await call(me, "DELETE", `/api/c/${id}/artifacts/demo`)).status, 404);
+        await publish(id, "<h1>three</h1>");
+        assert.equal(await app.shares.open(share.token), undefined, "the old link shows the page");
+
+        assert.equal((await app.artifactBody(fork.id, "demo", 1)).content, "<h1>one</h1>");
+        assert.equal((await app.artifactBody(fork.id, "demo")).content, "<h1>two</h1>");
+        assert.ok(await app.artifactAsset(fork.id, "demo", 2, "a.txt"), "the fork still uses it");
+    } finally {
+        app.config.removeUser(viewer.user.id);
+    }
+});
+
+test("an asset's bytes go once no artifact uses them, and no stored revision keeps what was deleted", async () => {
+    const first = await session();
+    const second = await session();
+    const me = app.config.ownerToken;
+    const shared = { name: "shared.txt", content: "bytes-both-use" };
+
+    await publish(first, "<h1>page-gone-1</h1>", {
+        title: "title-gone-1",
+        assets: [shared, { name: "own.txt", content: "bytes-gone-1" }],
+    });
+    await publish(second, "<h1>other</h1>", { assets: [shared] });
+    await call(me, "POST", `/api/c/${first}/artifact-state/demo`, { state: "state-gone-1" });
+
+    const own = (await app.harness.snapshot(ArtifactsDoc, first, context))!.items.demo!.versions[0]!
+        .assets!["own.txt"]!.hash;
+    const both = (await app.harness.snapshot(ArtifactsDoc, first, context))!.items.demo!
+        .versions[0]!.assets!["shared.txt"]!.hash;
+
+    assert.equal((await call(me, "DELETE", `/api/c/${first}/artifacts/demo`)).status, 200);
+    await artifacts.sweeping;
+    assert.equal(await app.harness.snapshot(ArtifactAssetDoc, own, context), undefined);
+    assert.ok(
+        await app.harness.snapshot(ArtifactAssetDoc, both, context),
+        "the other still uses it",
+    );
+    assert.ok(await app.artifactAsset(second, "demo", 1, "shared.txt"));
+
+    assert.equal((await call(me, "DELETE", `/api/c/${second}/artifacts/demo`)).status, 200);
+    await artifacts.sweeping;
+    assert.equal(await app.harness.snapshot(ArtifactAssetDoc, both, context), undefined);
+
+    await app.close();
+
+    const db = new DatabaseSync(join(dataDir, "pocket.sqlite"), { readOnly: true });
+
+    try {
+        for (const gone of [
+            "page-gone-1",
+            "title-gone-1",
+            "state-gone-1",
+            Buffer.from("bytes-gone-1").toString("base64"),
+            Buffer.from("bytes-both-use").toString("base64"),
+        ]) {
+            const row = db
+                .prepare("SELECT count(*) AS n FROM document_revisions WHERE content LIKE ?")
+                .get(`%${gone}%`) as { n: number };
+
+            assert.equal(row.n, 0, `${gone} is still stored`);
+        }
+    } finally {
+        db.close();
+        app = await openApp(scriptedModel(), dataDir);
+    }
+});
+
+test("bytes stored again while the sweep reads stay", async () => {
+    const early = await session();
+    const late = await session();
+    const race = { name: "race.txt", content: "bytes-in-a-race" };
+
+    await publish(late, "<h1>late</h1>", { assets: [race] });
+
+    // While the sweep reads `late`, `early` (read already) stores the same bytes.
+    const snapshot = app.harness.snapshot;
+
+    app.harness.snapshot = (async (...args: unknown[]) => {
+        if (args[0] === ArtifactsDoc && args[1] === late) {
+            app.harness.snapshot = snapshot;
+            await publish(early, "<h1>early</h1>", { assets: [race] });
+        }
+
+        return (snapshot as (...all: unknown[]) => unknown).apply(app.harness, args);
+    }) as typeof snapshot;
+
+    try {
+        assert.equal(
+            (await call(app.config.ownerToken, "DELETE", `/api/c/${late}/artifacts/demo`)).status,
+            200,
+        );
+        await artifacts.sweeping;
+    } finally {
+        app.harness.snapshot = snapshot;
+    }
+
+    const stored = await app.artifactAsset(early, "demo", 1, "race.txt");
+
+    assert.ok(stored, "the new version keeps its bytes");
+});
+
+test("published again, a deleted artifact never reuses a version number, and its delete holds after a restart", async () => {
+    const id = await session();
+    const me = app.config.ownerToken;
+
+    await publish(id, "<h1>old</h1>");
+    assert.equal((await call(me, "DELETE", `/api/c/${id}/artifacts/demo`)).status, 200);
+
+    // A card in a reply names `demo` version 1: that address must not show the new page.
+    assert.equal(await publish(id, "<h1>new</h1>"), 2);
+    await assert.rejects(app.artifactBody(id, "demo", 1), /No such version/);
+
+    await app.close();
+    app = await openApp(scriptedModel(), dataDir);
+
+    assert.equal((await app.artifactBody(id, "demo")).content, "<h1>new</h1>");
+    await assert.rejects(app.artifactBody(id, "demo", 1), /No such version/);
+    assert.equal(await body(id, 1), undefined);
+    assert.equal(await publish(id, "<h1>newer</h1>"), 3);
+});

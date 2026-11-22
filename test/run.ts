@@ -27,7 +27,12 @@ const selected = group === "all" ? names : names.filter((name) => isUi(name) ===
 
 const run = spawnSync(
     process.execPath,
-    ["--test", "--test-concurrency=1", ...selected.map((name) => join(folder, name))],
+    [
+        "--test",
+        "--test-concurrency=1",
+        "--test-timeout=600000",
+        ...selected.map((name) => join(folder, name)),
+    ],
     { stdio: "inherit" },
 );
 
