@@ -2,7 +2,7 @@
 
 Vendored from [`patlux/pi-commandcode-provider`](https://github.com/patlux/pi-commandcode-provider),
 under the MIT license in `LICENSE`. The catalog, the sign-in, and the account's endpoints are
-upstream 0.8.6 (commit `c8c12bd`); `generate/` is upstream 0.7.12 (commit `0f568ff`), where the
+upstream 0.8.7 (commit `7a06135`); `generate/` is upstream 0.7.12 (commit `0f568ff`), where the
 `/alpha/generate` client still shipped.
 
 Copied: `models.ts` (the catalog, its cache, each model's wire and thinking levels),
@@ -10,11 +10,12 @@ Copied: `models.ts` (the catalog, its cache, each model's wire and thinking leve
 back to), `api-key.ts` (the stored key), `pricing.ts` (display prices),
 `commandcode-catalog.ts` with `commandcode-catalog-overrides.ts` (Pi's image input,
 reasoning, and output limits per model, from Command Code's CLI catalog at
-`command-code@1.89.2`), `responses-compat.ts` (two Responses body repairs the models of
+`command-code@1.91.1`), `responses-compat.ts` (two Responses body repairs the models of
 `zai-org/GLM-5.3` and `mistral/mistral-large-4` need, and the stream trait of the model whose
 thinking arrives as plaintext `encrypted_content`), `responses-stream.ts` (the Responses
-reasoning-frame adapter), and `quota.ts`, `quota-format.ts` and `quota-types.ts` (the account's
-credits and usage windows, with `overflow.ts` for its error text).
+reasoning-frame adapter), `zdr.ts` (the zero-data-retention opt-in, its settings file, and its
+header), and `quota.ts`, `quota-format.ts` and `quota-types.ts` (the account's credits and usage
+windows, with `overflow.ts` for its error text).
 
 Pi Pocket adapts it in `../extensions/commandcode.ts`:
 
@@ -36,11 +37,13 @@ Pi Pocket adapts it in `../extensions/commandcode.ts`:
   `401 invalid_token` instead of coming back with a new expiry.
 - Zero data retention is on by default: every Provider API inference request carries
   `x-cmd-zdr: 1`, as the [Provider API docs](https://commandcode.ai/docs/markdown/provider/index.md)
-  document, and so do the account reads behind `/commandcode-quota`. `CMD_ZDR=0` (or its
-  `COMMANDCODE_ZDR` alias) turns it off; while it is on, a model with no ZDR-capable upstream
-  fails with `422 cmd_zdr_no_providers` instead of reaching a non-ZDR provider. The
-  `/alpha/generate` fallback is Command Code's own endpoint, not the Provider API: it gets no
-  such header, and its taste learning stays off while ZDR is on.
+  document, and so do the account reads behind `/commandcode-quota`. `/commandcode-zdr on|off`
+  (the owner's) shows it and writes `commandcode.enableZDR` into Pi's `settings.json`, as 0.8.7
+  does; the environment still decides first, so `CMD_ZDR=0` (or its `COMMANDCODE_ZDR` alias)
+  turns it off and a setting that could not take effect is refused. While it is on, a model with
+  no ZDR-capable upstream fails with `422 cmd_zdr_no_providers` instead of reaching a non-ZDR
+  provider. The `/alpha/generate` fallback is Command Code's own endpoint, not the Provider API:
+  it gets no such header, and its taste learning stays off while ZDR is on.
 - A model on the Responses wire gets two body repairs through Pi's `onPayload`, from
   `responses-compat.ts`, where upstream repairs the body at `fetch`: GLM-5.3 refuses Pi's
   untagged message items, and GLM-5.3 and Mistral Large 4 refuse `reasoning.effort: "none"`.

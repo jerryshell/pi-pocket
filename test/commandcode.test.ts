@@ -2,7 +2,7 @@
 import { type App, cleanUp, newSession, openApp, owner, root, scriptedModel } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { getApiProvider } from "@earendil-works/pi-ai/compat";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -529,6 +529,43 @@ test("/commandcode-quota shows the account's credits, and never its login", asyn
         ),
         "the stored key went to the account endpoints",
     );
+});
+
+test("/commandcode-zdr turns zero data retention off and on, and Pi's settings keep it", async () => {
+    const id = await newSession(app);
+    const command = app.webs.commands().find((each) => each.name === "commandcode-zdr");
+
+    assert.ok(command, "the module adds the command");
+    assert.equal(command.scope, "global", "the owner's alone");
+
+    const run = (args: string) =>
+        app.extensionCommands.run(id, owner(app), {
+            commandId: command.id,
+            args,
+            requestId: crypto.randomUUID(),
+        });
+    const toast = (receipt: object) => String((receipt as { message?: string }).message ?? "");
+
+    assert.match(toast(await run("")), /on \(default\)/, "on until someone says otherwise");
+    assert.match(toast(await run("sideways")), /Usage/, "only on or off");
+
+    assert.match(toast(await run("off")), /off \(settings\.json commandcode\.enableZDR\)/);
+    assert.deepEqual(
+        JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8")),
+        { commandcode: { enableZDR: false } },
+        "the choice is Pi's own setting, for the next start too",
+    );
+
+    // The header goes out with the registration: the next request carries none, and none reaches the account's routes.
+    await streamText(app.models.getModel("commandcode", "deepseek/deepseek-v4.1-flash")!);
+    assert.equal(calls.at(-1)?.zdr, undefined, "no header once it is off");
+
+    assert.match(toast(await run("on")), /on \(settings\.json commandcode\.enableZDR\)/);
+    await streamText(app.models.getModel("commandcode", "deepseek/deepseek-v4.1-flash")!);
+    assert.equal(calls.at(-1)?.zdr, "1", "the header is back with the next registration");
+
+    // What this test wrote stays out of the other tests' way.
+    rmSync(join(agentDir, "settings.json"), { force: true });
 });
 
 /** A request as someone, with the `X-Pocket` header the app asks for. */

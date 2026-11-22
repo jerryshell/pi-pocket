@@ -1,7 +1,7 @@
 // The vendored Command Code provider's own units (`src/server/commandcode/`): the sign-in callback's origin and
 // state, how a pasted key is validated, where credentials are read, the catalog's model facts, and its prices.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -21,7 +21,13 @@ import {
     thinkingMetadataForModel,
 } from "../src/server/commandcode/models.ts";
 import { MODEL_COSTS, PRICING_LAST_VERIFIED } from "../src/server/commandcode/pricing.ts";
-import { zdrEnabled } from "../src/server/commandcode/zdr.ts";
+import {
+    loadZdrSettings,
+    resolveZdr,
+    saveZdrSetting,
+    zdrEnabled,
+    zdrHeaders,
+} from "../src/server/commandcode/zdr.ts";
 
 const folders: string[] = [];
 
@@ -86,7 +92,7 @@ function close(auth: { server: { listening: boolean; close: () => unknown } }): 
 }
 
 test("the prices carry the free tier's zero rates, the dated Ling preview's list rates, and the ultrafast model's single rate", () => {
-    assert.equal(PRICING_LAST_VERIFIED, "2026-11-17");
+    assert.equal(PRICING_LAST_VERIFIED, "2026-11-20");
     assert.deepEqual(MODEL_COSTS["recursive/flint-v1.0:free"], {
         input: 0,
         output: 0,
@@ -138,17 +144,49 @@ test("the prices carry the free tier's zero rates, the dated Ling preview's list
         undefined,
         "the retired free poolside entry is gone",
     );
+    assert.deepEqual(MODEL_COSTS["tencent/hy4"], {
+        input: 0.834,
+        output: 2.501,
+        cacheRead: 0.042,
+        cacheWrite: 0,
+    });
+    assert.deepEqual(MODEL_COSTS["google/gemini-4-neon"], {
+        input: 3,
+        output: 15,
+        cacheRead: 0.15,
+        cacheWrite: 0,
+    });
+    assert.deepEqual(MODEL_COSTS["gpt-6.2-sol"], {
+        input: 2,
+        output: 10,
+        cacheRead: 0.1,
+        cacheWrite: 2.5,
+        tiers: [{ inputTokensAbove: 272_000, input: 4, output: 15, cacheRead: 0.2, cacheWrite: 5 }],
+    });
+    assert.deepEqual(MODEL_COSTS["gpt-6.2-astra"], {
+        input: 8,
+        output: 40,
+        cacheRead: 0.4,
+        cacheWrite: 10,
+        tiers: [
+            { inputTokensAbove: 272_000, input: 16, output: 60, cacheRead: 0.8, cacheWrite: 20 },
+        ],
+    });
 });
 
-test("the CLI 1.89.2 catalog adds Qwen 4 Max, Hy4 Flash, and Flint with their own facts", () => {
+test("the CLI 1.91.1 catalog adds GPT-6.2 Astra and Sol, and Hy4, with their own facts", () => {
     const added = [
         {
-            id: "Qwen/Qwen4-Max",
+            id: "gpt-6.2-astra",
             input: ["text", "image"],
-            efforts: ["off", "low", "high", "xhigh"],
+            efforts: ["low", "medium", "high", "xhigh", "max"],
         },
-        { id: "tencent/hy4-flash", input: ["text", "image"], efforts: ["off", "high"] },
-        { id: "recursive/flint-v1.0:free", input: ["text"], efforts: undefined },
+        {
+            id: "gpt-6.2-sol",
+            input: ["text", "image"],
+            efforts: ["low", "medium", "high", "xhigh", "max"],
+        },
+        { id: "tencent/hy4", input: ["text", "image"], efforts: ["low", "medium", "high"] },
     ];
 
     for (const { id, input, efforts } of added) {
@@ -186,6 +224,66 @@ test("zero data retention is on by default, and off only when the owner says so"
         false,
         "the explicit opt-out wins",
     );
+
+    assert.deepEqual(resolveZdr(undefined, {}), { enabled: true, source: "default" });
+    assert.deepEqual(resolveZdr({ commandcode: { enableZDR: false } }, {}), {
+        enabled: false,
+        source: "settings",
+    });
+    assert.deepEqual(resolveZdr({ commandcode: { enableZDR: true } }, {}), {
+        enabled: true,
+        source: "settings",
+    });
+    assert.deepEqual(
+        resolveZdr({ commandcode: { enableZDR: true } }, { CMD_ZDR: "0" }),
+        { enabled: false, source: "env", envVar: "CMD_ZDR" },
+        "a shell export cannot be weakened by a settings file",
+    );
+    assert.equal(
+        resolveZdr({ commandcode: { enableZDR: "no" } }, {}).source,
+        "default",
+        "only a literal boolean counts",
+    );
+    assert.deepEqual(zdrHeaders({ enabled: true, source: "default" }), { "x-cmd-zdr": "1" });
+    assert.equal(zdrHeaders({ enabled: false, source: "settings" }), undefined);
+});
+
+test("the opt-in is written to Pi's settings file, and its other keys stay", async () => {
+    const folder = tempFolder();
+    const path = join(folder, "settings.json");
+
+    writeFileSync(path, JSON.stringify({ theme: "dark", commandcode: { other: 1 } }), {
+        mode: 0o600,
+    });
+
+    const written = await saveZdrSetting(path, false);
+
+    assert.deepEqual(written, { theme: "dark", commandcode: { other: 1, enableZDR: false } });
+    assert.deepEqual(await loadZdrSettings(path), written);
+    assert.deepEqual(resolveZdr(await loadZdrSettings(path), {}), {
+        enabled: false,
+        source: "settings",
+    });
+    assert.equal(
+        (statSync(path).mode & 0o777).toString(8),
+        "600",
+        "the file keeps the owner's permissions",
+    );
+
+    // A malformed file is never overwritten: someone else's broken JSON stays for them to fix.
+    writeFileSync(path, "{ not json");
+    await assert.rejects(() => saveZdrSetting(path, true), /refusing to overwrite/);
+    assert.equal(readFileSync(path, "utf8"), "{ not json");
+
+    // A missing file is made, with a leading BOM read through as the host's own parser does.
+    const fresh = join(folder, "fresh", "settings.json");
+
+    await saveZdrSetting(fresh, true);
+    writeFileSync(fresh, `\uFEFF${readFileSync(fresh, "utf8")}`);
+    assert.deepEqual(resolveZdr(await loadZdrSettings(fresh), {}), {
+        enabled: true,
+        source: "settings",
+    });
 });
 
 test("credentials come from the pi profile the environment names, and not from the default one", () => {

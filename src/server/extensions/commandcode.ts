@@ -65,7 +65,14 @@ import { fetchCommandCodeQuota, redactValue } from "../commandcode/quota.ts";
 import type { CommandCodeQuota, CommandCodeQuotaResult } from "../commandcode/quota-types.ts";
 import { modelWireTraits, repairResponsesPayload } from "../commandcode/responses-compat.ts";
 import { normalizeCommandCodeResponsesResponse } from "../commandcode/responses-stream.ts";
-import { zdrEnabled } from "../commandcode/zdr.ts";
+import {
+    describeZdr,
+    loadZdrSettings,
+    resolveZdr,
+    saveZdrSetting,
+    type ZdrState,
+    zdrHeaders,
+} from "../commandcode/zdr.ts";
 import type { ExtensionWeb, PocketHost, WebRequest } from "../host.ts";
 
 /** A chat model's config: the union `models` takes narrows to this one by its required `reasoning`. */
@@ -117,11 +124,6 @@ interface UsageView {
 /** The provider's base URL without its provider path: the account's own endpoints sit beside it. */
 function accountApiBase(providerApiBase: string): string {
     return providerApiBase.replace(/\/provider\/v1\/?$/, "");
-}
-
-/** Command Code's headers: zero-data-retention on every request, unless the owner turned it off (`CMD_ZDR=0`). */
-function commandCodeHeaders(): Record<string, string> | undefined {
-    return zdrEnabled() ? { "x-cmd-zdr": "1" } : undefined;
 }
 
 /**
@@ -281,7 +283,10 @@ export default async function createCommandCode(
     const modelsUrl = process.env.COMMANDCODE_MODELS_URL ?? DEFAULT_MODELS_URL;
     const cachePath =
         process.env.COMMANDCODE_MODELS_CACHE ?? join(host.agentDir, "commandcode-models.json");
-    const headers = commandCodeHeaders();
+    // The zero-data-retention opt-in lives in Pi's settings.json, which `/commandcode-zdr` writes: the environment
+    // decides first, then the file, then Pi Pocket's default, which is on.
+    const settingsPath = join(host.agentDir, "settings.json");
+    let zdr: ZdrState = resolveZdr(await loadZdrSettings(settingsPath));
     // The last catalog this provider fetched: until one is there, the provider offers its sign-in and no models, and
     // Menu → Providers → Refresh models fetches the catalog over the network.
     let catalog: readonly CommandCodeModel[] = await loadCachedCommandCodeModels(cachePath);
@@ -352,7 +357,6 @@ export default async function createCommandCode(
         baseUrl: apiBase,
         // A stored sign-in wins; this lets an owner keep the key in the server's environment instead.
         apiKey: "$COMMAND_CODE_API_KEY",
-        ...(headers === undefined ? {} : { headers }),
         streamSimple: (model, context, options) => piStream(model, context, options),
         oauth: {
             name: "Command Code",
@@ -389,7 +393,34 @@ export default async function createCommandCode(
             : { models: catalog.map((model) => modelConfig(model, apiBase)) }),
     };
 
-    web.onDispose(host.registerModelProvider("commandcode", config));
+    // The zero-data-retention header goes out with the registration, so a change to it registers the provider again:
+    // this module's previous registration goes first, so nothing of this one's is left behind when the module is off.
+    let registration: (() => void) | undefined;
+
+    const register = () => {
+        const requestHeaders = zdrHeaders(zdr);
+
+        registration?.();
+        registration = host.registerModelProvider(
+            "commandcode",
+            requestHeaders === undefined ? config : { ...config, headers: requestHeaders },
+        );
+    };
+
+    /** Applies the opt-in `/commandcode-zdr` just wrote, and asks for the provider to be registered if it changed. */
+    const applyZdr = (state: ZdrState) => {
+        const changed = state.enabled !== zdr.enabled;
+
+        zdr = state;
+
+        if (changed) {
+            register();
+        }
+    };
+
+    register();
+
+    web.onDispose(() => registration?.());
 
     // Pi's api registry knows the api too, so a model whose `api` is Command Code's finds its stream by name.
     registerApiProvider(
@@ -424,10 +455,12 @@ export default async function createCommandCode(
             };
         }
 
+        // Read for each request, so `/commandcode-zdr` applies to the account reads at once.
+        const quotaHeaders = zdrHeaders(zdr);
         const result = await fetchCommandCodeQuota({
             apiKey,
             baseUrl: accountApiBase(apiBase),
-            ...(headers === undefined ? {} : { extraHeaders: headers }),
+            ...(quotaHeaders === undefined ? {} : { extraHeaders: quotaHeaders }),
         });
 
         if (result.ok) {
@@ -516,6 +549,59 @@ export default async function createCommandCode(
                     },
                     { transport: router.getTransport() },
                 ),
+            };
+        },
+    });
+
+    // The owner's alone: zero-data retention is a setting of the machine, which every session's requests share.
+    web.command("commandcode-zdr", {
+        description: "Show or set Command Code zero data retention",
+        args: "on | off",
+        scope: "global",
+        handler: async (args) => {
+            const choice = args.trim();
+
+            if (choice === "") {
+                return {
+                    type: "toast",
+                    level: "info",
+                    message: `Command Code zero data retention: ${describeZdr(zdr)}. Use /commandcode-zdr on or off.`,
+                };
+            }
+
+            if (choice !== "on" && choice !== "off") {
+                return {
+                    type: "toast",
+                    level: "warning",
+                    message: "Usage: /commandcode-zdr on|off",
+                };
+            }
+
+            // The environment wins at resolution time, so refuse instead of writing a setting that would not apply.
+            if (zdr.source === "env") {
+                return {
+                    type: "toast",
+                    level: "warning",
+                    message: `Zero data retention is set by ${zdr.envVar ?? "the environment"}. Unset it to change it here.`,
+                };
+            }
+
+            try {
+                applyZdr(resolveZdr(await saveZdrSetting(settingsPath, choice === "on")));
+            } catch (error) {
+                return {
+                    type: "toast",
+                    level: "error",
+                    message: redactValue(
+                        error instanceof Error ? error.message : "Could not save settings.json",
+                    ),
+                };
+            }
+
+            return {
+                type: "toast",
+                level: "info",
+                message: `Command Code zero data retention is ${describeZdr(zdr)}.`,
             };
         },
     });

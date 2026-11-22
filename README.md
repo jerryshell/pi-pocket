@@ -20,6 +20,7 @@ Turn it off in Menu → Extensions like any module.
 - sign in from Menu → Providers with an API key, or with the browser flow when the browser runs on the server's machine;
 - models come from Command Code's own catalog, kept at `~/.pi/agent/commandcode-models.json` and refreshed with **Refresh models**;
 - each model uses the wire Command Code serves it on (Chat Completions, Responses, or Anthropic Messages), with its thinking levels, image input, context limits, and display prices;
+- zero data retention is on by default: every Provider API request asks for it, and `/commandcode-zdr off` (kept in Pi's `settings.json`) or `CMD_ZDR=0` in the server's environment turns it off; the Go plan's `/alpha/generate` fallback never carries it;
 - `/commandcode-quota` shows the account's credits, plan, usage, and 5-hour and weekly windows in the session, and Menu → **Command Code usage** shows them in a sheet, with the remainder in its hint.
 
 The provider is vendored from [`patlux/pi-commandcode-provider`](https://github.com/patlux/pi-commandcode-provider) (MIT) into `src/server/commandcode/`. Turn it off in Menu → Extensions like any module.
