@@ -11,7 +11,7 @@
  * renders it, so `plaintextReasoningContent` turns it into the canonical delta just before the item completes. The
  * option is opt-in per model: for OpenAI models the same field holds real ciphertext and must stay invisible.
  *
- * Vendored from upstream 0.8.6, where the provider wraps its own fetch. Pi Pocket hands its Responses requests to Pi's
+ * Vendored from upstream (0.8.6, unchanged in 0.8.7), where the provider wraps its own fetch. Pi Pocket hands its Responses requests to Pi's
  * own transport instead, so `extensions/commandcode.ts` passes this adapter as that transport's `fetch`.
  */
 

@@ -10,10 +10,10 @@ const AGES = [
     { days: 30, label: "30 days" },
     { days: 90, label: "90 days" },
 ];
-const stays = (count) =>
+const afterwards = (count) =>
     count === 1
-        ? "Its transcript stays in Pi Pocket's database until Pi Durable can remove it. This cannot be undone."
-        : "Their transcripts stay in Pi Pocket's database until Pi Durable can remove them. This cannot be undone.";
+        ? "Its transcript, tasks, and documents go with it, from the database too. This cannot be undone."
+        : "Their transcripts, tasks, and documents go with them, from the database too. This cannot be undone.";
 
 function bytes(count) {
     if (count < 1024) {
@@ -168,7 +168,7 @@ export default function setup(pocket) {
                               <strong>${bytes(size)}</strong>
                               ${" (worktrees, uploads, and background logs)."}
                           </p>
-                          <p class="muted">${stays(going.length)}</p>
+                          <p class="muted">${afterwards(going.length)}</p>
                           ${ends && html`<p class="muted small">${ends}</p>`}
                           ${
                               kept > 0 &&
@@ -330,7 +330,7 @@ export default function setup(pocket) {
                             ${
                                 going.length === 0
                                     ? "No session of these can be removed now."
-                                    : `The sessions leave the app, and Pi Pocket removes its own files of them: ${bytes(going.reduce((total, plan) => total + freed(plan), 0))}. ${stays(going.length)}`
+                                    : `The sessions leave the app, and Pi Pocket removes its own files of them: ${bytes(going.reduce((total, plan) => total + freed(plan), 0))}. ${afterwards(going.length)}`
                             }
                         </p>
                         <${Stays} plans=${plans.filter((plan) => plan.blocked !== undefined)} />

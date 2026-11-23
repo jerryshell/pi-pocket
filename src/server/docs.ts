@@ -68,7 +68,7 @@ export type SessionMeta = {
 };
 
 /**
- * Its catalogue entry went in the same commit that wrote this. `conversations`: what a later purge takes. `done`: when
+ * Its catalogue entry went in the same commit that wrote this. `conversations`: what the purge takes. `done`: when
  * Pocket's own files went; until then, each start goes on with them.
  */
 export type RemovedSession = {
@@ -105,9 +105,8 @@ export const SessionsDoc = defineDoc<{ items: Record<string, SessionMeta> }>({
 });
 
 /**
- * Sessions whose data was still to be removed from the SQLite file, as a `0.29` copy left them. A removal now takes a
- * session out of `SessionsDoc` and purges its rows in one go (`session-cleanup.ts`), so nothing writes or reads this;
- * the kind stays because stored data is not deleted.
+ * The queue of sessions whose data was still to be removed from the SQLite file. A removal now purges its rows in one
+ * go (`session-cleanup.ts`), so nothing writes or reads this; the kind stays because stored data is not deleted.
  */
 export const PurgeDoc = defineDoc<{ ids: number[] }>({
     kind: "pocket.purge",

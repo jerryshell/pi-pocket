@@ -1,9 +1,17 @@
 # Command Code provider
 
+This page is the provider's own source of truth: what is copied, what is adapted, and what a sync of that
+code must keep. The fork's overview is [FORK.md](../../../FORK.md).
+
 Vendored from [`patlux/pi-commandcode-provider`](https://github.com/patlux/pi-commandcode-provider),
 under the MIT license in `LICENSE`. The catalog, the sign-in, and the account's endpoints are
 upstream 0.8.7 (commit `7a06135`); `generate/` is upstream 0.7.12 (commit `0f568ff`), where the
 `/alpha/generate` client still shipped.
+
+**What a sync must keep.** The `/alpha/generate` fallback for the Go plan (`generate/`, and the decision in
+`generate/router.ts`, pinned by `test/commandcode-generate.test.ts`), both Responses wirings (the body
+repairs through Pi's `onPayload`, the frame repairs through the transport's `fetch`), zero data retention
+on by default with `CMD_ZDR` deciding first, and the sign-in checks below.
 
 Copied: `models.ts` (the catalog, its cache, each model's wire and thinking levels),
 `oauth.ts` and `auth-server.ts` (sign-in, and the local callback the browser flow posts
