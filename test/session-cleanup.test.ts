@@ -17,7 +17,7 @@ import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { DeletedDoc, PurgeDoc, SessionsDoc, SpendDoc } from "../src/server/docs.ts";
+import { DeletedDoc, SessionsDoc, SpendDoc } from "../src/server/docs.ts";
 import { createHandler } from "../src/server/http.ts";
 
 const dataDir = join(root, "data");
@@ -409,37 +409,4 @@ test("a session the removed one started stays, without a link to it", async () =
         app.sessions().some((session) => session.id === Number(child)),
         "the session it started stays",
     );
-});
-
-test("a purge an older copy left waiting is finished at the next start", async () => {
-    const folder = join(root, "legacy-purge");
-    const first = await openApp(scriptedModel(), folder);
-    let id: ConversationId;
-
-    try {
-        id = await newSession(first);
-        await say(first, id, "hello");
-        // What the 0.29 deletion wrote: out of the list at once, its rows waiting in `PurgeDoc`.
-        await first.harness.commit(async (tx) => {
-            const sessions = await tx.doc(SessionsDoc);
-
-            delete sessions.items[String(id)];
-            (await tx.doc(PurgeDoc)).ids.push(Number(id));
-        }, context);
-    } finally {
-        await first.close();
-    }
-
-    const reopened = await openApp(scriptedModel(), folder);
-
-    try {
-        await until(
-            async () => (await reopened.harness.snapshot(PurgeDoc, context))?.ids.length === 0,
-            "the waiting purge to finish",
-        );
-        assert.equal(await reopened.harness.conversation(id, context), undefined);
-        assert.deepEqual(storedRows(id, folder), noRows);
-    } finally {
-        await reopened.close();
-    }
 });

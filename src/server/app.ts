@@ -6,7 +6,6 @@
  * What people ask of Pi lives in `commands.ts`, the people's side of a session in `collab.ts`, push notifications in
  * `alerts.ts`, provider sign-ins in `providers.ts`, and each conversation's shared live view in `room.ts`.
  */
-import { rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -75,7 +74,6 @@ import {
     DeletedDoc,
     FolderFavoritesDoc,
     MemoryDoc,
-    PurgeDoc,
     RunFailureDoc,
     type RemovedSession,
     type SessionMeta,
@@ -1064,8 +1062,6 @@ export class PocketApp {
 
         this.#openingStorage = undefined;
 
-        // A deletion the last process did not finish is completed before the sessions it left are read back.
-        await this.#purgePending();
         const conversations = await this.#recover(storage);
 
         await this.spend.load(conversations);
@@ -1205,34 +1201,6 @@ export class PocketApp {
     }
 
     /**
-     * Complete a deletion that the copy before this one did not finish (`PurgeDoc`): the session is already out of
-     * `SessionsDoc`, so its rows and uploads go and its place in `PurgeDoc` is cleared. A failure leaves it there for the
-     * next start. Nothing writes `PurgeDoc` any more: a removal purges its own rows (`session-cleanup.ts`), and this
-     * drains what a `0.29` copy left waiting.
-     */
-    async #purgePending(): Promise<void> {
-        const pending = await this.harness.snapshot(PurgeDoc, context);
-        const ids = pending?.ids ?? [];
-
-        if (ids.length === 0) {
-            return;
-        }
-
-        try {
-            const removed = await this.purgeStoredData(ids.map((id) => id as ConversationId));
-
-            await this.#removeUploads(removed);
-            await this.harness.commit(async (tx) => {
-                const doc = await tx.doc(PurgeDoc);
-
-                doc.ids = doc.ids.filter((id) => !ids.includes(id));
-            }, context);
-        } catch (error) {
-            this.#log(`deleted session data not removed: ${describe(error)}`);
-        }
-    }
-
-    /**
      * Remove a deleted session's rows for good, with its spend record, and forget it everywhere in memory: Pi Durable
      * has no delete of its own, so `purge.ts` removes what its tables hold for the conversation and the subagents it
      * started. It runs again safely, and throws when the rows do not go, so a caller that queued the removal
@@ -1257,21 +1225,6 @@ export class PocketApp {
         this.#announceDeleted(removed);
 
         return removed;
-    }
-
-    async #removeUploads(ids: readonly ConversationId[]): Promise<void> {
-        for (const id of ids) {
-            try {
-                await rm(join(this.dataDir, "uploads", String(id)), {
-                    recursive: true,
-                    force: true,
-                });
-            } catch (error) {
-                this.#log(
-                    `uploads for deleted session ${String(id)} not removed: ${describe(error)}`,
-                );
-            }
-        }
     }
 
     /** Drop what this process kept for conversations that no longer exist. */
@@ -1304,9 +1257,8 @@ export class PocketApp {
     }
 
     /**
-     * Tell tabs that showed a deleted conversation to leave it, and close its shared view. A removal through the
-     * catalogue also evicts those tabs with a word (`pocket.deleted`, then `missing`); this message is what a tab gets
-     * when the rows go without such a record, as a queued `pocket.purge` entry from an older copy does.
+     * Tell tabs that showed a deleted conversation to leave it, and close its shared view. The `pocket.deleted`
+     * watcher evicts them with a word (`missing`); a purge can run before it has, so a tab hears this too.
      */
     #announceDeleted(ids: readonly ConversationId[]): void {
         for (const id of ids) {

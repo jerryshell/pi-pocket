@@ -105,8 +105,9 @@ export const SessionsDoc = defineDoc<{ items: Record<string, SessionMeta> }>({
 });
 
 /**
- * Sessions whose data is still to be removed from the SQLite file. Deleting one takes it out of `SessionsDoc` first,
- * so it disappears at once; this list makes the row removal survive a failure or a restart. Empty when nothing waits.
+ * Sessions whose data was still to be removed from the SQLite file, as a `0.29` copy left them. A removal now takes a
+ * session out of `SessionsDoc` and purges its rows in one go (`session-cleanup.ts`), so nothing writes or reads this;
+ * the kind stays because stored data is not deleted.
  */
 export const PurgeDoc = defineDoc<{ ids: number[] }>({
     kind: "pocket.purge",
