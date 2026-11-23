@@ -8,10 +8,14 @@ under the MIT license in `LICENSE`. The catalog, the sign-in, and the account's 
 upstream 0.8.7 (commit `7a06135`); `generate/` is upstream 0.7.12 (commit `0f568ff`), where the
 `/alpha/generate` client still shipped.
 
-**What a sync must keep.** The `/alpha/generate` fallback for the Go plan (`generate/`, and the decision in
-`generate/router.ts`, pinned by `test/commandcode-generate.test.ts`), both Responses wirings (the body
-repairs through Pi's `onPayload`, the frame repairs through the transport's `fetch`), zero data retention
-on by default with `CMD_ZDR` deciding first, and the sign-in checks below.
+**What a sync must keep.**
+
+- The `/alpha/generate` fallback for the Go plan, in `generate/` and `generate/router.ts`, pinned by
+  `test/commandcode-generate.test.ts`.
+- Both Responses wirings. The body repairs go through Pi's `onPayload`; the frame repairs go through the
+  transport's `fetch`.
+- Zero data retention on by default, with `CMD_ZDR` deciding first.
+- The sign-in checks below.
 
 Copied: `models.ts` (the catalog, its cache, each model's wire and thinking levels),
 `oauth.ts` and `auth-server.ts` (sign-in, and the local callback the browser flow posts

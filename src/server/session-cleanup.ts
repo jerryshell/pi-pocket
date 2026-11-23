@@ -1,8 +1,8 @@
 /**
  * Removing a session takes it out of the app. `pocket.deleted` keeps each removed session until its files, its worktree,
- * and its uploads are gone; then `PocketApp.purgeStoredData` removes its rows from the SQLite file too, which Pi Durable
- * has no call for (`purge.ts`). A removal is one commit, then the files, then the rows: after a restart, `resume` goes on
- * with whatever is left.
+ * and its uploads are gone. `PocketApp.purgeStoredData` then removes its rows from the SQLite file too, which Pi Durable
+ * has no call for (`purge.ts`). A removal is one commit, then the files, then the rows. After a restart, `resume` goes
+ * on with whatever is left.
  */
 import { existsSync } from "node:fs";
 import { lstat, opendir, rm } from "node:fs/promises";

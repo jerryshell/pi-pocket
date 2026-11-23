@@ -1201,9 +1201,9 @@ export class PocketApp {
     }
 
     /**
-     * Remove a deleted session's rows for good, with its spend record, and forget it everywhere in memory: Pi Durable
+     * Remove a deleted session's rows for good, with its spend record, and forget it everywhere in memory. Pi Durable
      * has no delete of its own, so `purge.ts` removes what its tables hold for the conversation and the subagents it
-     * started. It runs again safely, and throws when the rows do not go, so a caller that queued the removal
+     * started. It runs again safely. It throws when the rows do not go, so a caller that queued the removal
      * (`pocket.deleted`) keeps its place and tries at the next start.
      */
     async purgeStoredData(ids: readonly ConversationId[]): Promise<ConversationId[]> {

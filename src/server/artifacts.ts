@@ -119,7 +119,7 @@ export async function deleteArtifact(
     }, context);
 
     // People learn who changed what from the chat's activity lines, as they do for archiving a session or putting a
-    // file back (`collab.ts`): a removal is worth a line, since the replies' cards only say it was deleted.
+    // file back (`collab.ts`). A removal is worth a line, since the replies' cards only say it was deleted.
     await app.collab.activity(conversation, user, `removed the artifact “${snippet(title, 80)}”`);
 
     // After the answer: it reads every conversation's index, and it runs again at start if cut off.

@@ -12,8 +12,8 @@ const AGES = [
 ];
 const afterwards = (count) =>
     count === 1
-        ? "Its transcript, tasks, and documents go with it, from the database too. This cannot be undone."
-        : "Their transcripts, tasks, and documents go with them, from the database too. This cannot be undone.";
+        ? "Its transcript, tasks, and documents go with it, out of the database too. This cannot be undone."
+        : "Their transcripts, tasks, and documents go with them, out of the database too. This cannot be undone.";
 
 function bytes(count) {
     if (count < 1024) {
