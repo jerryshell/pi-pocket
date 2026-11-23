@@ -1,7 +1,8 @@
 /**
- * Removing a session takes it out of the app, but its transcript stays in storage: Pi Durable cannot purge a
- * conversation yet. `pocket.deleted` keeps each removed session, the queue for such a purge. A removal is one commit,
- * then the files: after a restart, `resume` goes on with the files.
+ * Removing a session takes it out of the app. `pocket.deleted` keeps each removed session until its files, its worktree,
+ * and its uploads are gone; then `PocketApp.purgeStoredData` removes its rows from the SQLite file too, which Pi Durable
+ * has no call for (`purge.ts`). A removal is one commit, then the files, then the rows: after a restart, `resume` goes on
+ * with whatever is left.
  */
 import { existsSync } from "node:fs";
 import { lstat, opendir, rm } from "node:fs/promises";
@@ -504,6 +505,14 @@ export class SessionCleanup {
             }
 
             delete sessions.items[String(id)];
+
+            // A session this one started stays, but no longer points at a session that is gone.
+            for (const each of Object.values(sessions.items)) {
+                if (each.linkedFrom !== undefined && numbers.has(each.linkedFrom.id)) {
+                    delete each.linkedFrom;
+                }
+            }
+
             // From this transaction: a fork made while the plan ran reads these uploads too.
             keepUploads = this.#readByForks(leaving, sessions.items).has(Number(id));
             const record: RemovedSession = {
@@ -644,6 +653,12 @@ export class SessionCleanup {
                 rm(this.#logs(each), { recursive: true, force: true }),
             );
         }
+
+        // Pi Durable keeps a conversation's rows until something removes them, so this is what makes the removal a
+        // deletion. It throws when the rows do not go: `done` stays unset, and `resume` runs it again at the next start.
+        await app.purgeStoredData(
+            record.conversations.map((each) => each as unknown as ConversationId),
+        );
 
         if (left.length > 0) {
             app.log(`Session ${String(id)} was removed, but some of it stays: ${left.join("; ")}`);

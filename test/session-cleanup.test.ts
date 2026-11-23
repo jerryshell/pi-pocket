@@ -1,7 +1,6 @@
 import {
     cleanUp,
     context,
-    modelTexts,
     newSession,
     openApp,
     owner,
@@ -14,10 +13,11 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
+import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { DeletedDoc, SessionsDoc } from "../src/server/docs.ts";
+import { DeletedDoc, PurgeDoc, SessionsDoc, SpendDoc } from "../src/server/docs.ts";
 import { createHandler } from "../src/server/http.ts";
 
 const dataDir = join(root, "data");
@@ -103,10 +103,47 @@ function filesOf(id: ConversationId): { uploads: string; logs: string } {
     return { uploads, logs };
 }
 
+/**
+ * What the SQLite file holds for a conversation: the rows Pi Durable has no call to delete, which the removal takes
+ * with it (`purge.ts`), and its spend record.
+ */
+function storedRows(id: ConversationId, data = dataDir) {
+    const db = new DatabaseSync(join(data, "pocket.sqlite"), { readOnly: true });
+
+    try {
+        const count = (table: string, column: string) =>
+            (
+                db
+                    .prepare(`SELECT count(*) AS n FROM ${table} WHERE ${column} = ?`)
+                    .get(Number(id)) as { n: number }
+            ).n;
+
+        return {
+            conversations: count("conversations", "id"),
+            entries: count("entries", "conversation_id"),
+            tasks: count("tasks", "conversation_id"),
+            submissions: count("submissions", "conversation_id"),
+            documents: count("documents", "owner_id"),
+            recordIds: count("record_ids", "id"),
+        };
+    } finally {
+        db.close();
+    }
+}
+
+const noRows = {
+    conversations: 0,
+    entries: 0,
+    tasks: 0,
+    submissions: 0,
+    documents: 0,
+    recordIds: 0,
+};
+
 const archive = (id: ConversationId) =>
     app.commands.updateSession(id, owner(app), { archived: true });
 
-test("an archived session leaves the app with Pocket's own files; its transcript stays; a guest cannot", async () => {
+test("an archived session leaves the app with its files and its rows; a guest cannot", async () => {
     const id = await worktreeSession("Old work");
     const other = await newSession(app);
     const worktree = app.sessionMeta(id)!.worktree!;
@@ -154,11 +191,13 @@ test("an archived session leaves the app with Pocket's own files; its transcript
 
     const record = (await app.harness.snapshot(DeletedDoc, context))!.items[String(id)]!;
 
-    assert.ok(record.done !== undefined);
+    assert.ok(record.done !== undefined, "it is done, so no restart runs it again");
     assert.ok(record.conversations.includes(Number(id)));
-    assert.ok(
-        (await modelTexts(app, id)).some((text) => text.includes("hello")),
-        "the transcript stays in storage for a later purge",
+    assert.deepEqual(storedRows(id), noRows, "its transcript, tasks, and documents go with it");
+    assert.equal(
+        (await app.harness.snapshot(SpendDoc, context))?.counted[String(id)],
+        undefined,
+        "and its spend record",
     );
 });
 
@@ -293,6 +332,7 @@ test("a removal that a restart cut short goes on at the next start", async () =>
     assert.equal(existsSync(files.uploads), false);
     assert.equal(existsSync(files.logs), false);
     assert.equal((await call(`/api/c/${id}/trust`)).status, 404, "still out of the app");
+    assert.deepEqual(storedRows(id), noRows, "the rows a restart cut the removal before go too");
 });
 
 test("an env file that git ignores keeps a worktree, also in an ignored folder", async () => {
@@ -312,4 +352,94 @@ test("an env file that git ignores keeps a worktree, also in an ignored folder",
     assert.match(kept.why, /env file that git ignores/);
     assert.equal(stays.done, false);
     assert.ok(existsSync(env));
+});
+
+test("the route the session list deletes with runs the same removal, with the module off", async () => {
+    const id = await worktreeSession("Old list row");
+    const files = filesOf(id);
+
+    await say(app, id, "hello");
+    await archive(id);
+    // The sheet belongs to the module; the route and the removal are core's, so the session list keeps working.
+    await app.setExtensionEnabled(owner(app), "session-cleanup.ts", false);
+
+    try {
+        const done = await call(`/api/sessions/${id}/delete`, {});
+
+        assert.equal(done.status, 200, JSON.stringify(done.data));
+        assert.equal(
+            app.sessions().some((session) => session.id === Number(id)),
+            false,
+        );
+        assert.equal(existsSync(files.uploads), false);
+        assert.equal(existsSync(files.logs), false);
+        assert.deepEqual(storedRows(id), noRows);
+
+        const live = await newSession(app);
+        const refused = await call(`/api/sessions/${live}/delete`, {});
+
+        assert.equal(refused.status, 409);
+        assert.match(String(refused.data.error), /Archive it first/);
+
+        const guestDelete = await call(`/api/sessions/${live}/delete`, {}, guest);
+
+        assert.equal(guestDelete.status, 403, "the owner's alone");
+    } finally {
+        await app.setExtensionEnabled(owner(app), "session-cleanup.ts", true);
+    }
+});
+
+test("a session the removed one started stays, without a link to it", async () => {
+    const id = await newSession(app);
+    const child = await newSession(app);
+
+    await say(app, id, "hello");
+    await app.harness.commit(async (tx) => {
+        (await tx.doc(SessionsDoc)).items[String(child)]!.linkedFrom = { id: Number(id) };
+    }, context);
+    await archive(id);
+
+    assert.equal((await call(`/api/sessions/${id}/delete`, {})).status, 200);
+    assert.equal(
+        (await app.harness.snapshot(SessionsDoc, context))!.items[String(child)]?.linkedFrom,
+        undefined,
+        "the link to a session that is gone goes with it",
+    );
+    assert.ok(
+        app.sessions().some((session) => session.id === Number(child)),
+        "the session it started stays",
+    );
+});
+
+test("a purge an older copy left waiting is finished at the next start", async () => {
+    const folder = join(root, "legacy-purge");
+    const first = await openApp(scriptedModel(), folder);
+    let id: ConversationId;
+
+    try {
+        id = await newSession(first);
+        await say(first, id, "hello");
+        // What the 0.29 deletion wrote: out of the list at once, its rows waiting in `PurgeDoc`.
+        await first.harness.commit(async (tx) => {
+            const sessions = await tx.doc(SessionsDoc);
+
+            delete sessions.items[String(id)];
+            (await tx.doc(PurgeDoc)).ids.push(Number(id));
+        }, context);
+    } finally {
+        await first.close();
+    }
+
+    const reopened = await openApp(scriptedModel(), folder);
+
+    try {
+        await until(
+            async () => (await reopened.harness.snapshot(PurgeDoc, context))?.ids.length === 0,
+            "the waiting purge to finish",
+        );
+        assert.equal(await reopened.harness.conversation(id, context), undefined);
+        assert.deepEqual(storedRows(id, folder), noRows);
+    } finally {
+        await reopened.close();
+    }
 });

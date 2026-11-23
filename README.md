@@ -25,13 +25,12 @@ Turn it off in Menu → Extensions like any module.
 
 The provider is vendored from [`patlux/pi-commandcode-provider`](https://github.com/patlux/pi-commandcode-provider) (MIT) into `src/server/commandcode/`. Turn it off in Menu → Extensions like any module.
 
-**Permanent deletion of archived sessions.** Upstream can only archive a session. This fork lets the owner delete archived sessions for good:
+**Permanent deletion of archived sessions.** Upstream takes a removed session out of the app and leaves its transcript in the database, until Pi Durable grows a way to purge one. This fork finishes the job: the rows of its conversations go too, so the data is gone from `pocket.sqlite`, not waiting.
 
-- from the trash button on an archived row;
-- from **Delete permanently** in the touch hold menu;
-- for several rows at once with **Delete** in the selection bar.
-
-The app asks once, then removes the session's transcript, documents, tasks, submissions, uploads, per-session spending record, and hooks or repository watches that pointed at it. It refuses a session that is working, has a worktree, or is the source of a fork. A cleanup that did not finish is retried at the next server start.
+- **Delete permanently** is on an archived row's trash button, in its touch hold menu, and as **Delete** in the selection bar; it runs the same removal as Session cleanup, whose confirm shows what goes first;
+- the worktree (its branch stays), uploads, background logs, transcript, documents, tasks, submissions, per-session spending record, and the hooks or repository watches that pointed at it all go; a session it started stays, with no link to it;
+- a session where Pi works, or whose worktree has uncommitted changes or an env file, stays and says why;
+- a removal a restart cut short is finished at the next server start, and a session removed by the version before this one (its rows queued in `pocket.purge`) is cleaned up the same way.
 
 **Changes across a folder of repositories.** A session's folder can hold several checkouts of their own, as `~/siluyunpay` does with a dozen projects, and Changes now reviews each of them:
 

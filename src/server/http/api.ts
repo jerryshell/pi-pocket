@@ -593,15 +593,23 @@ export function createApi(options: HttpOptions, auth: Auth) {
             return json(response, 200, await app.commands.createSession(user, body));
         }
 
+        // The archived session's whole removal (`session-cleanup.ts`), the same one the sheet runs: its worktree, its
+        // files, its rows, and the links and schedules that pointed at it. The route is core's, so the buttons work
+        // with the Session cleanup module off.
         if (
             first === "sessions" &&
             second !== undefined &&
             third === "delete" &&
             method === "POST"
         ) {
-            await app.commands.deleteSession(conversationId(second), user);
+            const id = conversationId(second);
+            const [outcome] = await app.sessionCleanup.remove(user.id, [Number(id)]);
 
-            return json(response, 200, { ok: true });
+            if (outcome?.done !== true) {
+                throw new HttpError(409, outcome?.why ?? "The session stays.");
+            }
+
+            return json(response, 200, { ok: true, bytes: outcome.bytes ?? 0 });
         }
 
         if (first === "sessions" && second !== undefined && method === "POST") {

@@ -3,7 +3,8 @@
  *
  * Pi Durable keeps conversations, entries, tasks, submissions, documents, and their revisions append-only: it has no
  * delete call. Pi Pocket's owner can delete an archived session for good, so this module removes exactly those rows,
- * after the session is out of `SessionsDoc`. It is safe to run again: every statement deletes only what is there.
+ * after the session is out of `SessionsDoc` (`PocketApp.purgeStoredData`, called by `session-cleanup.ts` once the
+ * session's files are gone). It is safe to run again: every statement deletes only what is there.
  */
 import type { ConversationId, Storage } from "@earendil-works/pi-durable";
 

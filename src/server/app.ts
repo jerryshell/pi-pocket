@@ -1205,8 +1205,10 @@ export class PocketApp {
     }
 
     /**
-     * Complete a deletion the last process did not finish. The session is already out of `SessionsDoc`; remove its rows
-     * and uploads, then clear its place in `PurgeDoc`. A failure leaves it there for the next start.
+     * Complete a deletion that the copy before this one did not finish (`PurgeDoc`): the session is already out of
+     * `SessionsDoc`, so its rows and uploads go and its place in `PurgeDoc` is cleared. A failure leaves it there for the
+     * next start. Nothing writes `PurgeDoc` any more: a removal purges its own rows (`session-cleanup.ts`), and this
+     * drains what a `0.29` copy left waiting.
      */
     async #purgePending(): Promise<void> {
         const pending = await this.harness.snapshot(PurgeDoc, context);
@@ -1217,53 +1219,44 @@ export class PocketApp {
         }
 
         try {
-            const removed = await purgeConversations(
-                this.#storage!,
-                ids.map((id) => id as ConversationId),
-            );
+            const removed = await this.purgeStoredData(ids.map((id) => id as ConversationId));
 
             await this.#removeUploads(removed);
             await this.harness.commit(async (tx) => {
                 const doc = await tx.doc(PurgeDoc);
-                const spend = await tx.doc(SpendDoc);
 
                 doc.ids = doc.ids.filter((id) => !ids.includes(id));
-
-                for (const id of removed) {
-                    delete spend.counted[String(id)];
-                }
             }, context);
         } catch (error) {
             this.#log(`deleted session data not removed: ${describe(error)}`);
         }
     }
 
-    /** Remove a deleted session's rows and uploads now, and forget it everywhere in memory. Errors leave `PurgeDoc`. */
-    async purgeSessionData(ids: readonly ConversationId[]): Promise<void> {
+    /**
+     * Remove a deleted session's rows for good, with its spend record, and forget it everywhere in memory: Pi Durable
+     * has no delete of its own, so `purge.ts` removes what its tables hold for the conversation and the subagents it
+     * started. It runs again safely, and throws when the rows do not go, so a caller that queued the removal
+     * (`pocket.deleted`) keeps its place and tries at the next start.
+     */
+    async purgeStoredData(ids: readonly ConversationId[]): Promise<ConversationId[]> {
         if (this.#storage === undefined) {
-            return;
+            return [];
         }
 
-        try {
-            const removed = await purgeConversations(this.#storage, ids);
+        const removed = await purgeConversations(this.#storage, ids);
 
-            await this.#removeUploads(removed);
-            this.#forgetConversations(removed);
-            this.#announceDeleted(removed);
-            await this.harness.commit(async (tx) => {
-                const doc = await tx.doc(PurgeDoc);
-                const spend = await tx.doc(SpendDoc);
+        await this.harness.commit(async (tx) => {
+            const spend = await tx.doc(SpendDoc);
 
-                doc.ids = doc.ids.filter((id) => !ids.includes(id as ConversationId));
+            for (const id of removed) {
+                delete spend.counted[String(id)];
+            }
+        }, context);
 
-                for (const id of removed) {
-                    delete spend.counted[String(id)];
-                }
-            }, context);
-        } catch (error) {
-            // The session is already out of the list. The rows stay, and the next start tries again.
-            this.#log(`deleted session data not removed: ${describe(error)}`);
-        }
+        this.#forgetConversations(removed);
+        this.#announceDeleted(removed);
+
+        return removed;
     }
 
     async #removeUploads(ids: readonly ConversationId[]): Promise<void> {
