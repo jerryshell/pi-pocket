@@ -1,8 +1,9 @@
 # Pi Pocket, this fork
 
-Pi Pocket, maintained independently as a fork of
+Pi Pocket, maintained separately as a fork of
 [TannerMidd/pi-pocket](https://github.com/TannerMidd/pi-pocket). It follows that project's releases by
-merging their tags into `main` and sends nothing back, so every difference below is carried here for good.
+merging their tags into `main`; the changes upstream does not have are made here and stay here, so a sync
+carries every difference below forward.
 
 This page is the single list of those differences: what each does, where its code is, why upstream does not
 have it, and what a merge from upstream must keep.
@@ -183,8 +184,9 @@ sync must keep, not a merge artifact.
 
 ## The fork's own rules
 
-- **No GitHub Actions.** No file under `.github/workflows/` remains, and one a sync brings back is deleted:
-  the fork takes no pull requests, makes no releases, and publishes no docs site.
+- **No GitHub Actions.** No file under `.github/workflows/` remains, and one a sync brings back is deleted.
+  This repository is a working copy rather than a distribution: it takes no pull requests, cuts no releases,
+  and deploys no docs site.
 - **Tests run in groups.** `npm run test:core`, `npm run test:ui`, and `npm test` pick their files in
   `test/run.ts`, one at a time in this checkout, where the parallel run is flaky.
   [docs/self-editing.md](docs/self-editing.md#checking-a-change) says which to run for a change.

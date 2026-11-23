@@ -1,7 +1,7 @@
 # Pi Pocket (fork)
 
 A fork of [TannerMidd/pi-pocket](https://github.com/TannerMidd/pi-pocket), a self-hosted, multiplayer web
-app for Pi, maintained independently: it follows upstream's releases and sends nothing back.
+app for Pi, maintained separately: it follows upstream's releases, and its own changes live here.
 
 ## What this fork adds
 
