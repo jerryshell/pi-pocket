@@ -1943,7 +1943,8 @@ const handlers = {
             moving: kept(state.moving, stillMoving(state.moving, sessions)),
         });
     },
-    // A session was deleted for good: a tab showing it leaves for the list.
+    // A session's rows were purged: a tab showing it leaves for the list. A removal through the catalogue evicts its
+    // tabs first, with `missing`; this is what a queued purge from an older copy sends (`src/server/app.ts`).
     deleted: (data) => {
         if (
             store.state.conversationId !== null &&

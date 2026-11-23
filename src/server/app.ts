@@ -1303,7 +1303,11 @@ export class PocketApp {
         }
     }
 
-    /** Tell tabs that showed a deleted conversation to leave it, and close its shared view. */
+    /**
+     * Tell tabs that showed a deleted conversation to leave it, and close its shared view. A removal through the
+     * catalogue also evicts those tabs with a word (`pocket.deleted`, then `missing`); this message is what a tab gets
+     * when the rows go without such a record, as a queued `pocket.purge` entry from an older copy does.
+     */
     #announceDeleted(ids: readonly ConversationId[]): void {
         for (const id of ids) {
             const pending = this.#rooms.get(id);
