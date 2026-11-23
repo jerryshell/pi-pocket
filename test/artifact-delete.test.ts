@@ -10,6 +10,7 @@ import {
     ArtifactBodyDoc,
     ArtifactsDoc,
     ArtifactStateDoc,
+    ChatDoc,
     DesignCommentsDoc,
 } from "../src/server/docs.ts";
 import * as artifacts from "../src/server/artifacts.ts";
@@ -144,6 +145,15 @@ test("a delete takes every version, link, saved state, and comment at once; view
         assert.equal(await body(id, 1), undefined);
         assert.equal(await body(id, 2), undefined);
         assert.equal((await call(me, "DELETE", `/api/c/${id}/artifacts/demo`)).status, 404);
+
+        const line = ((await app.harness.snapshot(ChatDoc, id, context))?.messages ?? []).find(
+            (message) => message.kind === "event" && message.text.includes("removed the artifact"),
+        );
+
+        assert.ok(line, "the chat says who removed it, as it does for archiving a session");
+        assert.equal(line.text, "removed the artifact “Demo”");
+        assert.equal(line.userId, owner(app).id);
+
         await publish(id, "<h1>three</h1>");
         assert.equal(await app.shares.open(share.token), undefined, "the old link shows the page");
 
@@ -191,6 +201,19 @@ test("an asset's bytes go once no artifact uses them, and no stored revision kee
     const db = new DatabaseSync(join(dataDir, "pocket.sqlite"), { readOnly: true });
 
     try {
+        // What a delete drops is dropped from the revisions of its own documents too (`rebasedOnDelete`). The chat's
+        // activity line is the one trace kept on purpose, as Pi's own messages keep what Pi sent (`artifacts.ts`).
+        // The stored kind is JSON, quotes and all.
+        const count = (gone: string, kind = `!= '"pocket.chat"'`) =>
+            (
+                db
+                    .prepare(
+                        `SELECT count(*) AS n FROM document_revisions r JOIN documents d ON d.id = r.document_id
+                     WHERE r.content LIKE ? AND d.kind ${kind}`,
+                    )
+                    .get(`%${gone}%`) as { n: number }
+            ).n;
+
         for (const gone of [
             "page-gone-1",
             "title-gone-1",
@@ -198,12 +221,10 @@ test("an asset's bytes go once no artifact uses them, and no stored revision kee
             Buffer.from("bytes-gone-1").toString("base64"),
             Buffer.from("bytes-both-use").toString("base64"),
         ]) {
-            const row = db
-                .prepare("SELECT count(*) AS n FROM document_revisions WHERE content LIKE ?")
-                .get(`%${gone}%`) as { n: number };
-
-            assert.equal(row.n, 0, `${gone} is still stored`);
+            assert.equal(count(gone), 0, `${gone} is still stored`);
         }
+
+        assert.equal(count("removed the artifact “title-gone-1”", `= '"pocket.chat"'`), 1);
     } finally {
         db.close();
         app = await openApp(scriptedModel(), dataDir);

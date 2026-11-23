@@ -17,6 +17,7 @@ import {
     DesignCommentsDoc,
 } from "./docs.ts";
 import { HttpError } from "./errors.ts";
+import { snippet } from "./projection.ts";
 
 const context = BACKGROUND_CONTEXT;
 
@@ -62,7 +63,7 @@ export async function deleteArtifact(
 ): Promise<{ versions: number }> {
     app.requireSteer(user);
 
-    const versions = await app.harness.commit(async (tx) => {
+    const { versions, title } = await app.harness.commit(async (tx) => {
         const index = await tx.doc(ArtifactsDoc, conversation);
         const meta = Object.hasOwn(index.items, artifact) ? index.items[artifact] : undefined;
 
@@ -114,8 +115,12 @@ export async function deleteArtifact(
             }
         }
 
-        return count;
+        return { versions: count, title: meta.title };
     }, context);
+
+    // People learn who changed what from the chat's activity lines, as they do for archiving a session or putting a
+    // file back (`collab.ts`): a removal is worth a line, since the replies' cards only say it was deleted.
+    await app.collab.activity(conversation, user, `removed the artifact “${snippet(title, 80)}”`);
 
     // After the answer: it reads every conversation's index, and it runs again at start if cut off.
     sweeping = sweepAssets(app).catch((error: unknown) => {
