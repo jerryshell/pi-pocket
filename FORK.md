@@ -145,8 +145,8 @@ The code lives in `src/server/browser.ts`, `src/server/browser/page.ts`,
 ### A line in the chat when an artifact is deleted
 
 Upstream's artifact delete leaves Pi's own messages and the replies' deleted cards, and no trace in the chat.
-The fork writes one activity line that names the artifact the person removed, as it does for archiving a
-session. The chat keeps that title, and the artifact's own documents keep nothing.
+The fork writes one activity line that names the artifact the person removed, or the version of it, as it does
+for archiving a session. The chat keeps that title, and the artifact's own documents keep nothing.
 
 The code lives in `src/server/artifacts.ts`. Tests are in `test/artifact-delete.test.ts`, whose revision scan
 says the title survives nowhere but that line.

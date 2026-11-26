@@ -341,7 +341,7 @@ function pageOf(conversationId, id, version) {
  * session may see the card; later versions never change it. Until it comes the card says so.
  */
 export function InlineArtifact({ conversationId, id, title, version }) {
-    // A version the session no longer has, at or under the last number of a deleted artifact: someone deleted it.
+    // A version the session no longer has, at or under the highest number it ever had: someone deleted it.
     const { view } = store.state;
     const ended =
         view.conversation?.id === conversationId && Object.hasOwn(view.artifactsEnded ?? {}, id)

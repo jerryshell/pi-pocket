@@ -165,6 +165,113 @@ test("a delete takes every version, link, saved state, and comment at once; view
     }
 });
 
+test("deleting one version keeps the others, and never reuses its number", async () => {
+    const id = await session();
+    const me = app.config.ownerToken;
+
+    const one = await publish(id, "<h1>one</h1>");
+    const two = await publish(id, "<h1>two</h1>", {
+        assets: [{ name: "a.txt", content: "shared" }],
+    });
+    const three = await publish(id, "<h1>three</h1>");
+    const pinned = await app.shares.create(id, owner(app), { id: "demo", version: two });
+    const following = await app.shares.create(id, owner(app), { id: "demo" });
+    const meId = owner(app).id;
+
+    await app.harness.commit(async (tx) => {
+        (await tx.doc(DesignCommentsDoc, id)).items.demo = {
+            comments: [
+                {
+                    id: "on-one",
+                    version: one,
+                    target: {},
+                    text: "one",
+                    by: meId,
+                    byName: "Owner",
+                    at: 1,
+                },
+                {
+                    id: "on-two",
+                    version: two,
+                    target: {},
+                    text: "two",
+                    by: meId,
+                    byName: "Owner",
+                    at: 2,
+                },
+            ],
+            restores: { [String(three)]: one, [String(two)]: one },
+        };
+        (await tx.doc(ArtifactStateDoc, id)).items.demo = {
+            [meId]: { value: { kept: 1 }, at: 1 },
+        };
+    }, context);
+
+    const done = await call(me, "DELETE", `/api/c/${id}/artifacts/demo/${two}`);
+
+    assert.equal(done.status, 200, done.text);
+    assert.deepEqual(JSON.parse(done.text), { versions: 1, version: two, remaining: 2 });
+    assert.equal(await body(id, one), "<h1>one</h1>");
+    assert.equal(await body(id, two), undefined);
+    assert.equal(await body(id, three), "<h1>three</h1>");
+    assert.equal(
+        (await app.artifactBody(id, "demo")).content,
+        "<h1>three</h1>",
+        "the latest version stays",
+    );
+    assert.equal(await app.shares.open(pinned.token), undefined, "its pinned link goes");
+    assert.equal(
+        (await app.shares.open(following.token))?.found.version,
+        three,
+        "a link that follows the newest still does",
+    );
+
+    const design = (await app.harness.snapshot(DesignCommentsDoc, id, context))?.items.demo;
+
+    assert.deepEqual(
+        design?.comments.map((comment) => comment.id),
+        ["on-one"],
+        "only the deleted version's comments go",
+    );
+    assert.deepEqual(design?.restores, { [String(three)]: one });
+    assert.deepEqual(
+        (await app.harness.snapshot(ArtifactStateDoc, id, context))?.items.demo?.[meId]?.value,
+        { kept: 1 },
+        "saved state belongs to the artifact and stays",
+    );
+
+    const line = ((await app.harness.snapshot(ChatDoc, id, context))?.messages ?? []).find(
+        (message) => message.kind === "event" && message.text.includes("removed version"),
+    );
+
+    assert.equal(line?.text, "removed version 2 of the artifact “Demo”");
+
+    // The number is spent: a new version comes after the three, never at 2 again.
+    assert.equal(await publish(id, "<h1>four</h1>"), 4);
+    await assert.rejects(app.artifactBody(id, "demo", two), /No such version/);
+
+    await artifacts.sweeping;
+    assert.ok(
+        await app.artifactAsset(id, "demo", three, "a.txt"),
+        "an asset the remaining versions use stays",
+    );
+});
+
+test("deleting the last version takes the artifact with it", async () => {
+    const id = await session();
+    const me = app.config.ownerToken;
+
+    await publish(id, "<h1>only</h1>");
+
+    const done = await call(me, "DELETE", `/api/c/${id}/artifacts/demo/1`);
+
+    assert.equal(done.status, 200, done.text);
+    assert.deepEqual(JSON.parse(done.text), { versions: 1, version: 1, remaining: 0 });
+    await assert.rejects(app.artifactBody(id, "demo"), /No such artifact/);
+    assert.equal(await body(id, 1), undefined);
+    assert.equal((await call(me, "DELETE", `/api/c/${id}/artifacts/demo/0`)).status, 400);
+});
+
 test("an asset's bytes go once no artifact uses them, and no stored revision keeps what was deleted", async () => {
     const first = await session();
     const second = await session();

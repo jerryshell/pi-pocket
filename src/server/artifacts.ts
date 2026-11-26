@@ -1,6 +1,6 @@
 /**
- * One commit deletes an artifact's index entry, versions, share links, saved state, and design comments, so a restart
- * finds it all there or all gone. Asset bytes are shared by content hash: the commit lists the artifact's hashes, and a
+ * One commit deletes an artifact, or one of its versions, with its share links, saved state, and design comments, so a
+ * restart finds it all there or all gone. Asset bytes are shared by content hash: the commit lists the artifact's hashes, and a
  * sweep, after each delete and at start, retires the bytes no artifact names. Pi's own messages stay, as history.
  */
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -21,7 +21,7 @@ import { snippet } from "./projection.ts";
 
 const context = BACKGROUND_CONTEXT;
 
-/** One past its newest, or past the last one it had before a delete, so that a number never names two pages. */
+/** One past its newest, or past the highest number it ever had, so that a number never names two pages. */
 export function nextVersion(
     doc: {
         items: Record<string, { versions: { version: number }[] }>;
@@ -131,11 +131,130 @@ export async function deleteArtifact(
 }
 
 /**
+ * Delete one version, leaving the artifact's other versions: its page, the comments made on it, and the links pinned
+ * to it go in one commit. The last version takes the artifact with it. Its number is never used again, and a card in a
+ * reply that names it says it was deleted (`ended`).
+ */
+export async function deleteArtifactVersion(
+    app: PocketApp,
+    conversation: ConversationId,
+    user: User,
+    artifact: string,
+    version: number,
+): Promise<{ versions: 1; version: number; remaining: number }> {
+    app.requireSteer(user);
+
+    if (!Number.isSafeInteger(version) || version <= 0) {
+        throw new HttpError(400, "A version is a positive whole number");
+    }
+
+    const removed = await app.harness.commit(async (tx) => {
+        const index = await tx.doc(ArtifactsDoc, conversation);
+        const meta = Object.hasOwn(index.items, artifact) ? index.items[artifact] : undefined;
+
+        if (meta === undefined) {
+            throw new HttpError(404, "No such artifact");
+        }
+
+        const at = meta.versions.findIndex((each) => each.version === version);
+
+        if (at < 0) {
+            throw new HttpError(404, "No such version");
+        }
+
+        const gone = meta.versions.splice(at, 1)[0]!;
+        const hashes = new Set(Object.values(gone.assets ?? {}).map((asset) => asset.hash));
+        const last = meta.versions.length === 0;
+
+        await tx.retireDoc(ArtifactBodyDoc, conversation, `${artifact}@${version}`);
+
+        // An own key of `items`, so a slug the tool made: never `__proto__`.
+        index.ended ??= {};
+        index.ended[artifact] = Math.max(index.ended[artifact] ?? 0, version);
+
+        if (last) {
+            delete index.items[artifact];
+        }
+
+        const shares = await tx.doc(ArtifactSharesDoc);
+
+        for (const [token, share] of Object.entries(shares.items)) {
+            if (
+                share.conversation === String(conversation) &&
+                share.id === artifact &&
+                (last || share.version === version)
+            ) {
+                delete shares.items[token];
+            }
+        }
+
+        const design = await tx.doc(DesignCommentsDoc, conversation);
+        const item = Object.hasOwn(design.items, artifact) ? design.items[artifact] : undefined;
+
+        if (item !== undefined) {
+            if (last) {
+                delete design.items[artifact];
+            } else {
+                item.comments = item.comments.filter((comment) => comment.version !== version);
+
+                if (item.restores !== undefined) {
+                    for (const [made, from] of Object.entries(item.restores)) {
+                        if (Number(made) === version || from === version) {
+                            delete item.restores[made];
+                        }
+                    }
+
+                    if (Object.keys(item.restores).length === 0) {
+                        delete item.restores;
+                    }
+                }
+            }
+        }
+
+        if (last) {
+            const state = await tx.doc(ArtifactStateDoc, conversation);
+
+            if (Object.hasOwn(state.items, artifact)) {
+                delete state.items[artifact];
+            }
+        }
+
+        if (hashes.size > 0) {
+            const sweep = await tx.doc(ArtifactSweepDoc);
+
+            for (const hash of hashes) {
+                sweep.seq += 1;
+                sweep.hashes[hash] = sweep.seq;
+            }
+        }
+
+        return { title: meta.title, remaining: meta.versions.length };
+    }, context);
+
+    await app.collab.activity(
+        conversation,
+        user,
+        removed.remaining === 0
+            ? `removed the artifact “${snippet(removed.title, 80)}”`
+            : `removed version ${version} of the artifact “${snippet(removed.title, 80)}”`,
+    );
+
+    // After the answer: it reads every conversation's index, and it runs again at start if cut off.
+    sweeping = sweepAssets(app).catch((error: unknown) => {
+        console.error("Unused artifact assets could not be removed:", error);
+    });
+
+    return { versions: 1, version, remaining: removed.remaining };
+}
+
+/**
  * Reads every conversation's index, archived ones and subagents' too. A hash that a commit stored or listed again
  * during this read keeps its bytes, or waits for the next sweep.
  */
 export async function sweepAssets(app: PocketApp): Promise<number> {
-    const listed = { ...((await app.harness.snapshot(ArtifactSweepDoc, context))?.hashes ?? {}) };
+    const listed = {
+        ...((await app.harness.snapshot(ArtifactSweepDoc, context))?.hashes ?? {}),
+    };
 
     if (Object.keys(listed).length === 0) {
         return 0;

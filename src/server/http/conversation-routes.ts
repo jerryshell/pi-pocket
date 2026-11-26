@@ -6,7 +6,7 @@ import { basename, extname, join, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { readState, writeState } from "../artifact-state.ts";
-import { deleteArtifact } from "../artifacts.ts";
+import { deleteArtifact, deleteArtifactVersion } from "../artifacts.ts";
 import { outcome } from "../background.ts";
 import { openNoFollow } from "../no-follow.ts";
 import type { Attachment, SubmitRequest } from "../commands.ts";
@@ -59,7 +59,7 @@ export async function conversationRoutes(
 ): Promise<void> {
     const { app, request, response, url, user } = api;
     const method = request.method ?? "GET";
-    const [, , third, fourth] = parts;
+    const [, , third, fourth, fifth] = parts;
 
     if (third === "submit" && method === "POST") {
         const body = await readJson<SubmitRequest>(request);
@@ -623,6 +623,19 @@ export async function conversationRoutes(
         method === "DELETE"
     ) {
         return json(response, 200, await deleteArtifact(app, id, user, fourth));
+    }
+
+    // Deleting one version, which leaves the others. The last one takes the artifact with it.
+    if (
+        third === "artifacts" &&
+        fourth !== undefined &&
+        fifth !== undefined &&
+        parts.length === 5 &&
+        method === "DELETE"
+    ) {
+        const version = Number(fifth);
+
+        return json(response, 200, await deleteArtifactVersion(app, id, user, fourth, version));
     }
 
     // An artifact published to anyone with its address: the shares of this session, and ending one.

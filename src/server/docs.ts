@@ -279,7 +279,10 @@ export type ArtifactMeta = {
     versions: ArtifactVersion[];
 };
 
-/** Newest version last. `ended`: each deleted artifact's last version number, so that a number is never reused. */
+/**
+ * Newest version last. `ended`: the highest version number each artifact ever had when a version or the artifact was
+ * deleted, so that a number is never reused and a card that names it says it is gone.
+ */
 export const ArtifactsDoc = defineDoc<{
     items: Record<string, ArtifactMeta>;
     ended?: Record<string, number>;

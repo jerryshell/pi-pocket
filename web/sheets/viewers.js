@@ -52,6 +52,37 @@ export function deleteArtifact(conversationId, artifact) {
     }).then((done) => done === true);
 }
 
+/** Resolves true when the version is gone. The last version takes the artifact with it. */
+export function deleteArtifactVersion(conversationId, artifact, version) {
+    const only = artifact.versions.length === 1;
+    const what = only ? `“${artifact.title}”` : `version ${version} of “${artifact.title}”`;
+    const rest = only
+        ? "Its links and its cards in replies stop working. "
+        : "Its other versions stay. ";
+
+    if (
+        !confirm(
+            `Delete ${what}? ${rest}Pi's own messages that made it still hold the text Pi sent. This cannot be undone.`,
+        )
+    ) {
+        return Promise.resolve(false);
+    }
+
+    return attempt(async () => {
+        await api(
+            `c/${conversationId}/artifacts/${encodeURIComponent(artifact.id)}/${version}`,
+            undefined,
+            { method: "DELETE" },
+        );
+        notify(
+            "info",
+            only ? `Deleted ${artifact.title}.` : `Deleted ${artifact.title} v${version}.`,
+        );
+
+        return true;
+    }).then((done) => done === true);
+}
+
 export function ArtifactsSheet() {
     const { artifacts, conversation } = store.state.view;
     const canDelete = mayDelete(store.state.me);
@@ -90,9 +121,14 @@ export function ArtifactsSheet() {
                             canDelete &&
                             html`<button
                                 class="icon-button artifact-delete"
-                                title="Delete this artifact"
-                                aria-label=${`Delete ${artifact.title}`}
-                                onClick=${() => deleteArtifact(conversation.id, artifact)}
+                                title=${`Delete version ${version.version}`}
+                                aria-label=${`Delete ${artifact.title} version ${version.version}`}
+                                onClick=${() =>
+                                    deleteArtifactVersion(
+                                        conversation.id,
+                                        artifact,
+                                        version.version,
+                                    )}
                             >
                                 <${Icon} name="trash" size=${16} />
                             </button>`
@@ -119,8 +155,13 @@ export function ArtifactViewer({ id, version }) {
     const [shown, setShown] = useState(version ?? artifact?.versions.at(-1)?.version);
     const [nonce, setNonce] = useState(0);
     const latest = artifact?.versions.at(-1)?.version;
+    // The version was deleted while the viewer showed it: the artifact may still have others.
+    const goneVersion =
+        artifact !== undefined &&
+        shown !== undefined &&
+        !artifact.versions.some((each) => each.version === shown);
     const theme = artifact?.type === "markdown" ? themeQuery() : "";
-    const src = `/a/${view.conversation.id}/${encodeURIComponent(id)}/${shown ?? "latest"}${theme}`;
+    const src = `/a/${view.conversation.id}/${encodeURIComponent(id)}/${(goneVersion ? latest : shown) ?? "latest"}${theme}`;
     // A published page is out of the reach of an invite to one session, so only those who see every session publish.
     const shareable = me?.role !== "viewer" && me?.sessions === undefined && me?.role !== undefined;
     // The Design canvas (a built-in module) shows an HTML page with its versions, comments, and tweaks.
@@ -130,12 +171,16 @@ export function ArtifactViewer({ id, version }) {
     const deleted = artifact === undefined && Object.hasOwn(view.artifactsEnded ?? {}, id);
 
     const remove = () =>
+        deleteArtifactVersion(view.conversation.id, artifact, shown).then(
+            (done) => done && closeSheet(),
+        );
+    const removeAll = () =>
         deleteArtifact(view.conversation.id, artifact).then((done) => done && closeSheet());
 
     const openInDesign = () => {
         dispatchEvent(
             new CustomEvent("pocket:design-open", {
-                detail: { artifact: id, version: shown === latest ? null : shown },
+                detail: { artifact: id, version: goneVersion || shown === latest ? null : shown },
             }),
         );
         openExtPanel("design", "design");
@@ -146,8 +191,14 @@ export function ArtifactViewer({ id, version }) {
             <div class="viewer-title">
                 <strong>${artifact?.title ?? id}</strong>
                 <span class="muted small">
-                    ${artifact?.type ?? ""} · version ${shown}
+                    ${artifact?.type ?? ""} · version ${shown}${goneVersion ? " · deleted" : ""}
                     ${latest && shown !== latest ? html` · <button class="link" onClick=${() => setShown(latest)}>latest is v${latest}</button>` : ""}
+                    ${
+                        mayDelete(me) &&
+                        artifact &&
+                        artifact.versions.length > 1 &&
+                        html` · <button class="link" onClick=${removeAll}>delete all</button>`
+                    }
                 </span>
             </div>
             ${
@@ -181,6 +232,7 @@ export function ArtifactViewer({ id, version }) {
             ${
                 shareable &&
                 artifact &&
+                !goneVersion &&
                 html`<button
                     class="button small"
                     title="Publish it to anyone with a link"
@@ -193,10 +245,12 @@ export function ArtifactViewer({ id, version }) {
             ${
                 mayDelete(me) &&
                 artifact &&
+                !goneVersion &&
+                shown !== undefined &&
                 html`<button
                     class="icon-button danger"
-                    title="Delete this artifact"
-                    aria-label="Delete this artifact"
+                    title=${`Delete version ${shown}`}
+                    aria-label=${`Delete version ${shown}`}
                     onClick=${remove}
                 >
                     <${Icon} name="trash" />
@@ -209,7 +263,18 @@ export function ArtifactViewer({ id, version }) {
         ${
             deleted
                 ? html`<p class="muted viewer-gone">This artifact was deleted.</p>`
-                : html`<iframe
+                : goneVersion
+                  ? html`<p class="muted viewer-gone">
+                        This version was deleted.
+                        ${
+                            latest &&
+                            html`<button
+                                class="link"
+                                onClick=${() => setShown(latest)}
+                            >View latest v${latest}</button>`
+                        }
+                    </p>`
+                  : html`<iframe
                       ref=${frame}
                       key=${`${src}#${nonce}`}
                       src=${src}
