@@ -8,6 +8,7 @@ import {
     BOTTOM_SHEETS,
     html,
     Icon,
+    Loader,
     popAnchor,
     scrimPress,
     shortPath,
@@ -98,6 +99,7 @@ export function BranchPicker() {
     const [branches, setBranches] = useState(null);
     const [error, setError] = useState(null);
     const [switching, setSwitching] = useState(false);
+    const [reload, setReload] = useState(0);
     const [picked, setPicked] = useState(0);
     const [anchor, setAnchor] = useState(branchAnchor);
     const box = useRef(null);
@@ -165,6 +167,7 @@ export function BranchPicker() {
 
         let live = true;
 
+        setBranches(null);
         setError(null);
         actions.branches().then(
             (each) => live && setBranches(each),
@@ -174,7 +177,7 @@ export function BranchPicker() {
         return () => {
             live = false;
         };
-    }, [opened, head]);
+    }, [opened, head, reload]);
     useEffect(() => {
         if (opened?.type === "branch" && opened.query !== undefined) {
             setQuery(opened.query);
@@ -330,9 +333,33 @@ export function BranchPicker() {
                     }}
                 />
             </label>
-            <div class="pop-menu-list" ref=${list} role="listbox" aria-label="Branches">
-                ${error && html`<p class="muted pop-menu-note">${error}</p>`}
-                ${!branches && !error && html`<p class="muted pop-menu-note">Asking git…</p>`}
+            <div
+                class="pop-menu-list"
+                ref=${list}
+                role="listbox"
+                aria-label="Branches"
+                aria-busy=${!branches && !error ? "true" : undefined}
+            >
+                ${
+                    error &&
+                    html`<div class="pop-menu-error" role="alert">
+                        <p class="muted pop-menu-note">${error}</p>
+                        <button
+                            class="button small"
+                            type="button"
+                            onClick=${() => setReload((count) => count + 1)}
+                        >
+                            Try again
+                        </button>
+                    </div>`
+                }
+                ${
+                    !branches &&
+                    !error &&
+                    html`<div class="pop-menu-loading">
+                        <${Loader} label="Reading branches" />
+                    </div>`
+                }
                 ${
                     branches &&
                     rows.length === 0 &&

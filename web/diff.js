@@ -1697,7 +1697,7 @@ export function DiffReview({ active = true, autoFocus = false, covering = false 
     }
 
     if (!changes) {
-        return html`<div class="dr" ref=${ref}><${Loader} label="Asking git" /></div>`;
+        return html`<div class="dr" ref=${ref}><${Loader} label="Reading changes" /></div>`;
     }
 
     const all = changes.files;
