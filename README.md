@@ -1,29 +1,39 @@
-# Pi Pocket (fork)
+<div align="center">
 
-A fork of [TannerMidd/pi-pocket](https://github.com/TannerMidd/pi-pocket), a self-hosted, multiplayer web
-app for Pi.
+# Pi Pocket, this fork
 
-This checkout merges upstream's release tags into `main`. The changes below are made here and stay here.
+**A fork of [Pi Pocket](https://github.com/TannerMidd/pi-pocket), the self-hosted, multiplayer web app for Pi.**
+
+</div>
+
+This checkout follows upstream's release tags by merging them into `main`. Everything below is made here,
+stays here, and is carried through each sync. The vendored Command Code provider has its own sync rules in
+[src/server/commandcode/README.md](src/server/commandcode/README.md).
 
 ## What this fork adds
 
-- **Command Code models.** A built-in provider with its catalog, sign-in, quota, and zero-data-retention
-  default. The Go plan works through the `/alpha/generate` fallback, and its usage sheet reads any key's
-  credits.
-- **Loop.** `/loop-on <aim>` keeps Pi working on its own, answer after answer, until someone stops it.
-- **Deletion from the database.** A removed session's transcript, tasks, documents, and spend record go along
-  with its files.
-- **Changes across a folder of repositories.** One review with a chip per checkout, plus History, which shows
-  a repository's commits and the diff of each.
-- **A browser page that closes after use.** Pi's page goes when its run ends, and the tool takes `close`.
-- **Cache miss notices.** An answer that paid for a large prompt-cache miss says what was billed again, and
+- **Command Code, built in.** A provider with its live catalog, API-key or browser sign-in, zero data
+  retention by default, and the Go plan's `/alpha/generate` fallback. Its sheet shows credits, usage windows,
+  and any key's usage; a 503 that only failed to check the balance is retried, not failed as billing.
+- **Loop.** `/loop-on <aim>` keeps Pi working, answer after answer, until someone stops it.
+- **A removal that finishes the job.** Removing a session deletes its rows from `pocket.sqlite`. A live fork
+  keeps the parent history it reads until the last fork goes.
+- **Changes across a folder of repositories.** One review with a chip per checkout, and History with a
+  repository's commits and each one's diff.
+- **Artifacts with version-level delete.** Remove one version and keep the others; the chat names who removed
+  it, and All artifacts has a delete button.
+- **Cache miss notices.** An answer that paid a large prompt-cache miss says what was billed again, and
   whether a model switch or a long idle came before.
-- **A chat line for a deleted artifact**, naming who removed it.
+- **A browser page that closes after use.** Pi's page goes when its run ends, and the tool takes `close`.
 
-Each addition is detailed in [FORK.md](FORK.md): its code, its tests, why upstream does not have it, and what
-a merge must keep. [docs/features.md](docs/features.md) is the feature tour, [docs/map.md](docs/map.md) the
-code map, and [AGENTS.md](AGENTS.md) how to edit this checkout.
+[FORK.md](FORK.md) is the full list: what each addition does, where its code and tests are, and every file a
+merge must keep. [docs/features.md](docs/features.md) is the app's feature tour, and [docs/map.md](docs/map.md)
+maps the code.
+
+## Install and work on it
 
 Install and configure it as [upstream's README](https://github.com/TannerMidd/pi-pocket#readme) says.
+[AGENTS.md](AGENTS.md) and [docs/self-editing.md](docs/self-editing.md) tell how to edit this checkout and
+which checks to run. This fork formats and lints with Oxfmt and Oxlint.
 
-[MIT](LICENSE).
+[MIT](LICENSE)

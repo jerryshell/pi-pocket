@@ -1,22 +1,25 @@
-# Contributing to Pi Pocket
+# Working on this fork
 
-Thank you for your help. This page tells how to send a change.
-
-## Before you start
-
-- Read the [policies](docs/extensions/policies/index.md). They tell what belongs in core and what belongs in an extension, which interfaces are public, and how they change.
-- For a large change, open an issue first. Tell what you want to change, and why.
-- If an extension cannot do what you need, ask for an extension point ([how](docs/extensions/policies/core-or-extension.md#ask-for-a-new-extension-point)).
-- To report a security problem, do not open an issue. Read [SECURITY.md](SECURITY.md).
+This is a fork of [Pi Pocket](https://github.com/TannerMidd/pi-pocket), maintained separately. It takes no
+pull requests and cuts no releases; changes are made here and carried through each sync of upstream's release
+tags. [FORK.md](FORK.md) lists what differs and what a merge must keep.
 
 ## Make the change
 
-- [AGENTS.md](AGENTS.md) and [docs/self-editing.md](docs/self-editing.md) tell how to work on the code. [docs/map.md](docs/map.md) tells where things are.
+- Read [AGENTS.md](AGENTS.md), [docs/self-editing.md](docs/self-editing.md), and [docs/map.md](docs/map.md).
 - Add one small test for each real risk that the change brings. The test must fail before the change.
-- Run `npm run format`, `npm run check`, `npm run lint`, and the tests [docs/self-editing.md](docs/self-editing.md#checking-a-change) asks for (the feature's own tests, and those of any shared file it touches; `npm test` is slow and is for a release).
+- Run `npm run format`, `npm run check`, `npm run lint`, and the tests
+  [docs/self-editing.md](docs/self-editing.md#checking-a-change) asks for. `npm test` is the slow release
+  check, not a push check.
+- To report a security problem, do not open an issue. Read [SECURITY.md](SECURITY.md).
+
+## Keep the docs true
+
+- Fork differences and merge rules live in [FORK.md](FORK.md). Other pages answer their own question and
+  point there instead of restating it.
+- [docs/map.md](docs/map.md), [docs/architecture.md](docs/architecture.md), and
+  [docs/features.md](docs/features.md) follow a change that moves code, a dependency, or what people see.
 
 ## Send it
 
-- Open a pull request with a short title, and a brief note: what changed, why, and what you tested.
-- Maintainers merge with a merge commit, so your commits keep your name. A ready pull request goes into the open release branch: it comes out in the next beta and in Friday's release ([docs/releases.md](docs/releases.md)).
-- A release pull request's description is the release notes: [docs/release-notes.md](docs/release-notes.md) tells how to write them.
+Commit to `main` with a short title and a body that says what changed, why, and what you tested.

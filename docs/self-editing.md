@@ -62,7 +62,7 @@ If you do not run a check, say which.
 | Launcher, updates, and packages                     | `test/launcher-*.test.ts`, `test/updates*.test.ts`, `test/npm-*.test.ts`, `test/boot-failure-ui.test.ts`                                                                                        |
 | The app's own web modules and sheets                | their `test/*-ui.test.ts`, when they have one; `npm run test:ui` runs them all                                                                                                                  |
 
-Keep [map.md](map.md), [architecture.md](architecture.md), and [features.md](features.md) true. When a change moves code, adds a dependency between parts, or changes what people see, update them in the same change.
+Keep [map.md](map.md), [architecture.md](architecture.md), and [features.md](features.md) true. When a change moves code, adds a dependency between parts, or changes what people see, update them in the same change. A fork-only behavior or merge rule goes in [FORK.md](../FORK.md), the single list of differences; do not repeat it in these pages.
 
 ## Check it on a copy
 
