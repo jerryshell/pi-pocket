@@ -1,0 +1,23 @@
+{
+    "$schema": "./node_modules/oxlint/configuration_schema.json",
+    "plugins": ["eslint"],
+    "categories": { "correctness": "off" },
+    "jsPlugins": [{ "name": "stylistic", "specifier": "@stylistic/eslint-plugin" }],
+    "rules": {
+        "curly": ["error", "all"],
+        "stylistic/padding-line-between-statements": [
+            "error",
+            { "blankLine": "always", "prev": "directive", "next": "*" },
+            { "blankLine": "any", "prev": "directive", "next": "directive" },
+            { "blankLine": "always", "prev": ["const", "let", "var"], "next": "*" },
+            {
+                "blankLine": "any",
+                "prev": ["const", "let", "var"],
+                "next": ["const", "let", "var"]
+            },
+            { "blankLine": "always", "prev": "*", "next": ["block-like", "return", "throw"] },
+            { "blankLine": "always", "prev": "block-like", "next": "*" }
+        ]
+    },
+    "ignorePatterns": ["node_modules/**", "data/**", "docs-site/dist/**", "docs-site/.astro/**"]
+}

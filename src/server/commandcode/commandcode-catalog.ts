@@ -2,7 +2,13 @@ export const COMMAND_CODE_CLI_VERSION = "1.91.1";
 
 export type CommandCodeInputType = "text" | "image";
 export type CommandCodeReasoningEffort =
-    "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+    | "off"
+    | "minimal"
+    | "low"
+    | "medium"
+    | "high"
+    | "xhigh"
+    | "max";
 
 /**
  * Generated from command-code@1.91.1 by `npm run sync:commandcode-catalog`.

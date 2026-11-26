@@ -401,9 +401,11 @@ export function ProvidersSheet() {
     ].filter(([, each]) => each.length > 0);
 
     // Where sign-ins live, said once: beside Signed in, or the first group when nothing is signed in.
-    const noteGroup = (groups.find(([title]) => title === "Signed in") ??
+    const noteGroup = (
+        groups.find(([title]) => title === "Signed in") ??
         groups.find(([title]) => title === "Not configured") ??
-        groups[0])?.[0];
+        groups[0]
+    )?.[0];
     const noteMore = owner ? "" : " · only the owner can change them";
     const note = html`<p class="providers-note">
         Shared with Pi · <span class="mono">~/.pi/agent/auth.json</span>${noteMore}

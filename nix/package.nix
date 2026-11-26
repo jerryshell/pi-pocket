@@ -52,7 +52,8 @@ stdenv.mkDerivation {
       ../package.json
       ../package-lock.json
       ../tsconfig.json
-      ../eslint.config.js
+      ../.oxfmtrc.json
+      ../.oxlintrc.json
       ../README.md
       ../AGENTS.md
       ../SECURITY.md

@@ -111,7 +111,7 @@ What needed care:
 - Smart punctuation turns `'` into `’` on the site (not in anchors). GitHub-only syntax such as `> [!NOTE]` shows as a plain quote; the docs do not use it, and the style rules will say so.
 - GitHub Pages uses one 404 page for the whole site, so Starlight's is not used.
 
-`docs-site/` holds `package.json` (`pi-pocket-docs`, private), its lock, `astro.config.mjs`, the loader and plugin, the home page, and a stylesheet with the product site's colors and `site/fonts/`. The root `npm run lint` and `npm run format` cover its sources with the same rules, and ignore `docs-site/dist/` and `docs-site/.astro/`. Prettier skips the one `.astro` file, laid out by hand. The root `tsconfig.json` and the Nix package leave the folder out, so the app ships without it.
+`docs-site/` holds `package.json` (`pi-pocket-docs`, private), its lock, `astro.config.mjs`, the loader and plugin, the home page, and a stylesheet with the product site's colors and `site/fonts/`. The root `npm run lint` and `npm run format` cover its sources with the same rules, and ignore `docs-site/dist/` and `docs-site/.astro/`. Oxfmt skips the one `.astro` file, laid out by hand. The root `tsconfig.json` and the Nix package leave the folder out, so the app ships without it.
 
 ## Deploy
 

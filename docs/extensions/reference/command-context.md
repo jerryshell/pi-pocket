@@ -134,7 +134,8 @@ Changes documents in one commit: `await ctx.commit(async (tx) => …)`. It retur
 
 ```ts
 type CommandResult =
-    { type: "toast"; level: NoticeLevel; message: string } | { type: "card"; output: string };
+    | { type: "toast"; level: NoticeLevel; message: string }
+    | { type: "card"; output: string };
 ```
 
 Since 0.14.0 · Stable

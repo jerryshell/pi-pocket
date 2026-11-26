@@ -49,7 +49,8 @@ export interface ServeEvents {
 }
 
 export type ServeResult =
-    { ok: true; url: string; adopted: boolean } | { ok: false; message: string };
+    | { ok: true; url: string; adopted: boolean }
+    | { ok: false; message: string };
 
 /** The first `1.2.3` line of `tailscale version`, or of anything else that starts with one. */
 export function parseTailscaleVersion(text: string): number[] | undefined {

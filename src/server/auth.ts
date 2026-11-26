@@ -86,7 +86,8 @@ export function clearAuthCookie(response: ServerResponse): void {
  * in as the owner, with the owner's token: it is never for one session.
  */
 export type InviteGrant =
-    { role: Exclude<Role, "owner">; session?: string } | { role: "owner"; session?: never };
+    | { role: Exclude<Role, "owner">; session?: string }
+    | { role: "owner"; session?: never };
 
 /** Invites live in `config.json` (by their codes' hashes), so one that lasts a day or a week outlives a restart. */
 export class Auth {

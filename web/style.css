@@ -2474,13 +2474,13 @@ kbd {
     :is(.md, .md-part)
     > .code:not([data-kind]):has(
         > pre:is(
-                :not([data-lang]),
-                [data-lang="text" i],
-                [data-lang="txt" i],
-                [data-lang="plaintext" i],
-                [data-lang="markdown" i],
-                [data-lang="md" i]
-            )
+            :not([data-lang]),
+            [data-lang="text" i],
+            [data-lang="txt" i],
+            [data-lang="plaintext" i],
+            [data-lang="markdown" i],
+            [data-lang="md" i]
+        )
     ) {
     left: 0;
     width: auto;

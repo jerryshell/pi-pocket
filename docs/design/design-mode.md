@@ -21,7 +21,7 @@ Rules for every stream:
 - Touch only the files your stream owns. When you need a change in another stream's file, write it in your notes file and keep going with a small local stub.
 - Do not edit `docs/features.md`, `docs/map.md`, `docs/release-notes.md`, `README.md`, or `CHANGELOG`. Write what they must say in `docs/design/notes-<a|b|c|d>.md`. The integrator merges them.
 - Document kinds are stored data. Add new kinds and new optional fields. Never rename a kind, or change its scope, history, or fork settings.
-- Keep to the house style (AGENTS.md): erasable TypeScript, `.ts` imports, Prettier and ESLint, `npm run format`, `npm run check`, `npm run lint`, and the tests [self-editing.md](../self-editing.md#checking-a-change) asks for.
+- Keep to the house style (AGENTS.md): erasable TypeScript, `.ts` imports, Oxfmt and Oxlint, `npm run format`, `npm run check`, `npm run lint`, and the tests [self-editing.md](../self-editing.md#checking-a-change) asks for.
 - No new npm dependencies. Node and the browser have what this needs (zlib for zip, CDP for Chromium).
 - Check by hand on a throwaway copy: `node test/serve.ts <port> 127.0.0.2` with your port (A 8901, B 8902, C 8903, D 8904). The `browser` tool is one Chromium that all streams and the people watching share: navigate, check, and leave. If a page changes under you, another stream uses it: navigate again.
 

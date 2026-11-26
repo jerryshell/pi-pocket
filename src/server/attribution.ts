@@ -67,7 +67,8 @@ export class Attribution {
         storage: Storage,
         id: ConversationId,
         authorsDoc:
-            { entries: Record<string, string>; requesters?: Record<string, string> } | undefined,
+            | { entries: Record<string, string>; requesters?: Record<string, string> }
+            | undefined,
     ): Promise<Missing[]> {
         const known: Record<string, string> = {
             ...authorsDoc?.requesters,

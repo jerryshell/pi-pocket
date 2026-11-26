@@ -983,7 +983,8 @@ One of Pi's answers: its id in its session, its words as Markdown, and its sessi
 
 ```ts
 type ReplyActionSpec = (
-    { run: (reply: Reply) => unknown; sheet?: never } | { sheet: string; run?: never }
+    | { run: (reply: Reply) => unknown; sheet?: never }
+    | { sheet: string; run?: never }
 ) &
     Placement & {
         id: string;

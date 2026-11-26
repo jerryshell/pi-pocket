@@ -321,7 +321,13 @@ export function pageStyles(source: string): { blocks: string[]; inline: Decl[] }
 export const UNKNOWN = Symbol("unknown");
 
 export type Literal =
-    string | number | boolean | null | typeof UNKNOWN | Literal[] | { [key: string]: Literal };
+    | string
+    | number
+    | boolean
+    | null
+    | typeof UNKNOWN
+    | Literal[]
+    | { [key: string]: Literal };
 
 /** A JavaScript object or array literal, read without running anything: what is not a literal is `UNKNOWN`. */
 export function readLiteral(text: string, start: number): Literal | undefined {

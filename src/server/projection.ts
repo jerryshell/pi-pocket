@@ -919,7 +919,8 @@ export function projectStats(
         }
 
         const message = entry.model?.[0] as
-            { usage?: UsageNumbers; stopReason?: string; pocketTiming?: StreamTiming } | undefined;
+            | { usage?: UsageNumbers; stopReason?: string; pocketTiming?: StreamTiming }
+            | undefined;
         const used = message?.usage;
 
         if (

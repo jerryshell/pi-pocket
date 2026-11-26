@@ -725,7 +725,8 @@ export default function createArtifacts(_host: PocketHost) {
                 guide(
                     (
                         input.agent.tools.find((tool) => tool.name === "artifact")?.parameters as
-                            { properties?: Record<string, unknown> } | undefined
+                            | { properties?: Record<string, unknown> }
+                            | undefined
                     )?.properties?.inline !== undefined,
                 ),
             ),

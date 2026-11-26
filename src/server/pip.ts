@@ -1728,7 +1728,8 @@ export class Pip {
         await runtime.commit(async (tx) => {
             text = textOf(
                 (await tx.entry(AssistantEntry, answerId))?.model?.[0] as
-                    AssistantMessage | undefined,
+                    | AssistantMessage
+                    | undefined,
             );
 
             return undefined;

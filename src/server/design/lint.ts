@@ -378,7 +378,8 @@ export async function checkPage(
         literals: tokens !== undefined,
     };
     const raw = (await page.evaluateIsolated(`(${PAGE_SCRIPT})(${JSON.stringify(input)})`)) as
-        RawPage | undefined;
+        | RawPage
+        | undefined;
 
     if (raw === undefined || raw === null || typeof raw !== "object") {
         throw new Error("The page check returned nothing.");

@@ -280,7 +280,8 @@ export class WebPart {
 
 /** The routes a request to a module could mean. */
 export type RouteMatch =
-    { route: Route; part: WebPart; params: Record<string, string> } | { allow: WebMethod[] };
+    | { route: Route; part: WebPart; params: Record<string, string> }
+    | { allow: WebMethod[] };
 
 interface Options {
     /** Browser modules changed: each affected tab must hear which to load. */

@@ -24,7 +24,7 @@ A screen that exists (a page, a sheet, a dialog, or a component of the project) 
 - One self-contained HTML artifact, responsive and touch-friendly. It loads nothing from the network: images, fonts, and data files go in with the tools' assets (ask the person for their paths), and icons and illustrations are inline SVG or CSS.
 - Start from this skeleton and keep every part of it:
 
-<!-- prettier-ignore -->
+<!-- oxfmt-ignore -->
 ```html
 <!doctype html>
 <html lang="en">
@@ -95,7 +95,7 @@ The project has a design system, so a design is on-system or it is wrong:
 
 The skeleton above, on a system (the names are this example's; use the summary's own):
 
-<!-- prettier-ignore -->
+<!-- oxfmt-ignore -->
 ```html
 <head>
 <meta charset="utf-8">

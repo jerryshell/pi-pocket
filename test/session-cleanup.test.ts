@@ -146,7 +146,8 @@ function conversationRecord(id: ConversationId): Record<string, unknown> {
 
     try {
         const row = db.prepare("SELECT record FROM conversations WHERE id = ?").get(Number(id)) as
-            { record: string } | undefined;
+            | { record: string }
+            | undefined;
 
         if (row === undefined) {
             throw new Error(`No conversation ${id}`);

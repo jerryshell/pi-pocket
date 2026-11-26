@@ -276,7 +276,8 @@ function reporterFor(Courier: CourierTask, host: Pick<PocketHost, "notice">) {
             // It answered: the stall watch may stop its work again.
             delete agent.stops;
             const answer = (await tx.entry(AssistantEntry, settled.answer))?.model?.[0] as
-                AssistantMessage | undefined;
+                | AssistantMessage
+                | undefined;
 
             return next(`${REPORT_PREFIX}${name} answered, no reply needed] ${textOf(answer)}`);
         }, context);

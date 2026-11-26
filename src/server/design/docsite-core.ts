@@ -184,7 +184,13 @@ export function plain(type: TokenType, value: ModeValue | undefined): string {
 
 /** The sections that count tokens. A token is in exactly one; their counts add up to the system's token count. */
 export type SectionId =
-    "color" | "typography" | "spacing" | "radii" | "shadows" | "motion" | "other";
+    | "color"
+    | "typography"
+    | "spacing"
+    | "radii"
+    | "shadows"
+    | "motion"
+    | "other";
 
 const SECTION_HINTS: [SectionId, RegExp][] = [
     ["typography", /^(font|type|text|typography|line|leading|letter|tracking)$/],

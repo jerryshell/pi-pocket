@@ -1889,7 +1889,8 @@ export interface CommandContext {
  * @since 0.14.0
  */
 export type CommandResult =
-    { type: "toast"; level: NoticeLevel; message: string } | { type: "card"; output: string };
+    | { type: "toast"; level: NoticeLevel; message: string }
+    | { type: "card"; output: string };
 
 // ─── pocket: the browser module's API ────────────────────────────────────────
 
@@ -2282,7 +2283,8 @@ export interface Reply {
  * @experimental
  */
 export type ReplyActionSpec = (
-    { run: (reply: Reply) => unknown; sheet?: never } | { sheet: string; run?: never }
+    | { run: (reply: Reply) => unknown; sheet?: never }
+    | { sheet: string; run?: never }
 ) &
     Placement & {
         /**

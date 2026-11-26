@@ -29,7 +29,7 @@ So a change to an extension module and to other server code goes live in two par
 Before you say that the change is done:
 
 ```sh
-npm run format     # Prettier and ESLint's fixes
+npm run format     # Oxfmt and Oxlint's fixes
 npm run lint
 npm run check      # TypeScript
 node --test test/<name>.test.ts  # the tests of what changed

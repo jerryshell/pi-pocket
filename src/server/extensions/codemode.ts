@@ -158,7 +158,8 @@ function formatError(
 }
 
 type OutputItem =
-    { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
+    | { type: "text"; text: string }
+    | { type: "image"; data: string; mimeType: string };
 
 /** Keep the start and end of text over the budget; the whole text goes to a temporary file the agent can read. */
 async function budget(

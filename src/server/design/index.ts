@@ -54,7 +54,8 @@ const modeSchema = str({
 const MAX_FINDINGS = 30;
 
 type Output = (
-    { type: "text"; text: string } | { type: "image"; data: string; mimeType: string }
+    | { type: "text"; text: string }
+    | { type: "image"; data: string; mimeType: string }
 )[];
 
 function findingLine(finding: CheckFinding, views: string, all: number): string {
@@ -530,7 +531,9 @@ export function designRoutes(web: ExtensionWeb, host: PocketHost, deps: DesignTo
             const format = typeof body.format === "string" ? body.format : "";
             const selectedVersion = body.version === undefined ? undefined : Number(body.version);
             const size = body.viewport as
-                { width?: unknown; height?: unknown } | string | undefined;
+                | { width?: unknown; height?: unknown }
+                | string
+                | undefined;
             const viewport =
                 typeof size === "string"
                     ? size

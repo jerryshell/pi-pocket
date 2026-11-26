@@ -10,6 +10,7 @@
     "tabWidth": 4,
     "trailingComma": "all",
     "useTabs": false,
+    "sortPackageJson": false,
     "overrides": [
         {
             "files": ["web/**/*.js", "site/**/*.js"],
@@ -17,5 +18,15 @@
                 "embeddedLanguageFormatting": "off"
             }
         }
+    ],
+    "ignorePatterns": [
+        "node_modules/",
+        "data/",
+        "docs-site/dist/",
+        "docs-site/.astro/",
+        "package-lock.json",
+        "flake.lock",
+        "*.png",
+        "*.woff2"
     ]
 }

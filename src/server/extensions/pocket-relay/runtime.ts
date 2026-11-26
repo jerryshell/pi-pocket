@@ -71,7 +71,13 @@ interface ConnectorState {
 }
 
 type StatusState =
-    "off" | "starting" | "running" | "waiting" | "failed" | "stopped" | "no-connector";
+    | "off"
+    | "starting"
+    | "running"
+    | "waiting"
+    | "failed"
+    | "stopped"
+    | "no-connector";
 
 interface Status {
     state: StatusState;
