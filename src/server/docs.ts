@@ -82,6 +82,11 @@ export type RemovedSession = {
     forkedFrom?: { id: number; entryId?: number };
     /** Uploads folders a live fork still reads (`workspace.ts`). */
     keepUploads?: number[];
+    /**
+     * Conversations whose rows stay because a live fork reads their history: a removed parent session keeps what its
+     * fork reads, and these go when the last fork does (`purge.ts`).
+     */
+    keepHistory?: number[];
     done?: number;
     left?: string[];
 };

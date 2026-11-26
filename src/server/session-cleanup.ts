@@ -460,8 +460,8 @@ export class SessionCleanup {
         }
 
         if (removed.size > 0) {
-            await this.#releaseUploads().catch((error: unknown) =>
-                this.#app.log(`Kept uploads could not be checked: ${describe(error)}`),
+            await this.#releaseKept().catch((error: unknown) =>
+                this.#app.log(`Kept rows and uploads could not be checked: ${describe(error)}`),
             );
         }
 
@@ -655,8 +655,10 @@ export class SessionCleanup {
         }
 
         // Pi Durable keeps a conversation's rows until something removes them, so this is what makes the removal a
-        // deletion. It throws when the rows do not go: `done` stays unset, and `resume` runs it again at the next start.
-        await app.purgeStoredData(
+        // deletion. A fork that stays keeps the rows of the history it reads; `kept` names them, and the removal record
+        // takes them when the last fork goes. It throws when the rows do not go: `done` stays unset, and `resume` runs
+        // it again at the next start.
+        const purge = await app.purgeStoredData(
             record.conversations.map((each) => each as unknown as ConversationId),
         );
 
@@ -670,6 +672,12 @@ export class SessionCleanup {
             if (item !== undefined) {
                 item.done = Date.now();
 
+                if (purge.kept.length > 0) {
+                    item.keepHistory = purge.kept.map(Number);
+                } else {
+                    delete item.keepHistory;
+                }
+
                 if (left.length > 0) {
                     item.left = left;
                 }
@@ -677,10 +685,41 @@ export class SessionCleanup {
         }, context);
     }
 
-    /** Once no session that stays reads them. */
-    async #releaseUploads(): Promise<void> {
+    /** Rows and uploads kept for a fork: once no session that stays reads them. */
+    async #releaseKept(): Promise<void> {
         const items = (await this.#app.harness.snapshot(DeletedDoc, context))?.items ?? {};
         const read = this.#readByForks(new Set());
+        const history = new Set<number>();
+
+        for (const record of Object.values(items)) {
+            for (const each of record.keepHistory ?? []) {
+                if (!read.has(each)) {
+                    history.add(each);
+                }
+            }
+        }
+
+        if (history.size > 0) {
+            const purge = await this.#app.purgeStoredData(
+                [...history].map((each) => each as unknown as ConversationId),
+            );
+            const stillKept = new Set(purge.kept.map(Number));
+            const gone = new Set([...history].filter((each) => !stillKept.has(each)));
+
+            if (gone.size > 0) {
+                await this.#app.harness.commit(async (tx) => {
+                    for (const item of Object.values((await tx.doc(DeletedDoc)).items)) {
+                        const kept = (item.keepHistory ?? []).filter((each) => !gone.has(each));
+
+                        if (kept.length > 0) {
+                            item.keepHistory = kept;
+                        } else {
+                            delete item.keepHistory;
+                        }
+                    }
+                }, context);
+            }
+        }
 
         for (const [key, record] of Object.entries(items)) {
             const gone: number[] = [];
@@ -710,7 +749,7 @@ export class SessionCleanup {
         }
     }
 
-    /** Also removes uploads that no fork reads any more. */
+    /** Also removes rows and uploads that no fork reads any more. */
     async resume(): Promise<void> {
         const items = (await this.#app.harness.snapshot(DeletedDoc, context))?.items ?? {};
 
@@ -723,8 +762,8 @@ export class SessionCleanup {
             }
         }
 
-        await this.#releaseUploads().catch((error: unknown) =>
-            this.#app.log(`Kept uploads could not be checked: ${describe(error)}`),
+        await this.#releaseKept().catch((error: unknown) =>
+            this.#app.log(`Kept rows and uploads could not be checked: ${describe(error)}`),
         );
     }
 }

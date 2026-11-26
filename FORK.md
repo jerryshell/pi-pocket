@@ -76,12 +76,18 @@ files, uploads, and logs are gone, its conversations' rows go too: entries, task
 revisions, and its per-session spend record. The rows are then gone from `pocket.sqlite`. Pi Durable has no
 delete of a conversation, so `purge.ts` deletes those rows from Pi Durable's tables directly.
 
+A fork reads the history before its fork point through its parent conversation's entries. When the parent session
+goes first, the conversation row and the entries the fork reads stay, like the uploads a fork reads: the fork
+keeps working with its history. `pocket.deleted` keeps them (`keepHistory`), and they go when the last fork that
+reads them is removed.
+
 The removal itself is upstream's Session cleanup. Before anything goes, the plan reports the worktree's
 state, any env file git ignores, the uploads a live fork reads, links, schedules, and lessons. Its
 `pocket.deleted` document is the queue, and `resume` finishes at start whatever a restart cut short. The fork
 adds:
 
-- the purge after the files, and the `linkedFrom` cleanup in the removal's commit;
+- the purge after the files, the rows a live fork reads kept until the last fork goes, and the `linkedFrom`
+  cleanup in the removal's commit;
 - its own entry points, which run that same removal through the core route
   `POST /api/sessions/:id/delete`: the trash button on an archived row, **Delete permanently** in its hold
   menu, and **Delete** in the selection bar. They work with the Session cleanup module off;

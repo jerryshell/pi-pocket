@@ -1203,28 +1203,31 @@ export class PocketApp {
     /**
      * Remove a deleted session's rows for good, with its spend record, and forget it everywhere in memory. Pi Durable
      * has no delete of its own, so `purge.ts` removes what its tables hold for the conversation and the subagents it
-     * started. It runs again safely. It throws when the rows do not go, so a caller that queued the removal
-     * (`pocket.deleted`) keeps its place and tries at the next start.
+     * started. A conversation a surviving fork reads keeps the rows of its history: `kept` names it, and its removal
+     * record takes them when the last fork goes. It runs again safely. It throws when the rows do not go, so a caller
+     * that queued the removal (`pocket.deleted`) keeps its place and tries at the next start.
      */
-    async purgeStoredData(ids: readonly ConversationId[]): Promise<ConversationId[]> {
+    async purgeStoredData(
+        ids: readonly ConversationId[],
+    ): Promise<{ removed: ConversationId[]; kept: ConversationId[] }> {
         if (this.#storage === undefined) {
-            return [];
+            return { removed: [], kept: [] };
         }
 
-        const removed = await purgeConversations(this.#storage, ids);
+        const purge = await purgeConversations(this.#storage, ids);
 
         await this.harness.commit(async (tx) => {
             const spend = await tx.doc(SpendDoc);
 
-            for (const id of removed) {
+            for (const id of purge.removed) {
                 delete spend.counted[String(id)];
             }
         }, context);
 
-        this.#forgetConversations(removed);
-        this.#announceDeleted(removed);
+        this.#forgetConversations(purge.removed);
+        this.#announceDeleted(purge.removed);
 
-        return removed;
+        return purge;
     }
 
     /** Drop what this process kept for conversations that no longer exist. */

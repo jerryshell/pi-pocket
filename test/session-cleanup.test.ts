@@ -140,6 +140,24 @@ const noRows = {
     recordIds: 0,
 };
 
+/** A conversation's stored record, as SQLite keeps it: where a fork's parent link lives. */
+function conversationRecord(id: ConversationId): Record<string, unknown> {
+    const db = new DatabaseSync(join(dataDir, "pocket.sqlite"), { readOnly: true });
+
+    try {
+        const row = db.prepare("SELECT record FROM conversations WHERE id = ?").get(Number(id)) as
+            { record: string } | undefined;
+
+        if (row === undefined) {
+            throw new Error(`No conversation ${id}`);
+        }
+
+        return JSON.parse(row.record) as Record<string, unknown>;
+    } finally {
+        db.close();
+    }
+}
+
 const archive = (id: ConversationId) =>
     app.commands.updateSession(id, owner(app), { archived: true });
 
@@ -228,6 +246,7 @@ test("uncommitted changes in its worktree keep a session; a live fork keeps the 
     const child = await forkOf(parent);
     const grandFiles = filesOf(grand);
     const parentFiles = filesOf(parent);
+    const inherited = (await app.transcripts.allEntries(child, false)).map((entry) => entry.id);
 
     await archive(grand);
     await archive(parent);
@@ -245,11 +264,55 @@ test("uncommitted changes in its worktree keep a session; a live fork keeps the 
     assert.equal(existsSync(parentFiles.uploads), true);
     assert.equal(existsSync(grandFiles.logs), false);
     assert.ok(app.sessionMeta(child) !== undefined);
+    assert.deepEqual(
+        (await app.transcripts.allEntries(child, false)).map((entry) => entry.id),
+        inherited,
+        "the fork keeps both ancestors' history",
+    );
 
     await archive(child);
     assert.equal((await call("/api/x/session-cleanup/remove", { ids: [child] })).status, 200);
     assert.equal(existsSync(grandFiles.uploads), false);
     assert.equal(existsSync(parentFiles.uploads), false);
+    assert.deepEqual(storedRows(grand), noRows, "the grandparent's kept rows go");
+    assert.deepEqual(storedRows(parent), noRows, "the parent's kept rows go");
+});
+
+test("removing the session a fork came from keeps the history the fork reads", async () => {
+    const parent = await newSession(app);
+
+    await say(app, parent, "hello");
+    const child = (
+        await app.commands.fork(parent, owner(app), {
+            entryId: (await app.transcripts.allEntries(parent, false)).at(-1)!.id,
+        })
+    ).id;
+
+    await say(app, child, "carry on");
+    const before = (await app.transcripts.allEntries(child, false)).map((entry) => entry.id);
+
+    await archive(parent);
+
+    const [outcome] = (await call("/api/x/session-cleanup/remove", { ids: [parent] })).data
+        .outcomes;
+
+    assert.equal(outcome.done, true);
+    const link = conversationRecord(child).parent as { conversationId?: number } | undefined;
+
+    assert.equal(link?.conversationId, Number(parent), "the fork keeps its parent link");
+    assert.deepEqual(
+        (await app.transcripts.allEntries(child, false)).map((entry) => entry.id),
+        before,
+        "the fork reads the same history as before the removal",
+    );
+    assert.ok(storedRows(parent).conversations > 0, "the parent's row stays for the fork");
+
+    // The last fork's removal takes the rows its history kept.
+    await archive(child);
+    const [last] = (await call("/api/x/session-cleanup/remove", { ids: [child] })).data.outcomes;
+
+    assert.equal(last.done, true);
+    assert.deepEqual(storedRows(parent), noRows, "the kept rows go with the last fork");
 });
 
 test("a fork made while the removal checks the session keeps the uploads it reads", async () => {
