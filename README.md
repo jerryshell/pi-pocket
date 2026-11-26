@@ -7,9 +7,10 @@ This checkout merges upstream's release tags into `main`. The changes below are 
 
 ## What this fork adds
 
-- **Loop.** `/loop-on <aim>` keeps Pi working on its own, answer after answer, until someone stops it.
 - **Command Code models.** A built-in provider with its catalog, sign-in, quota, and zero-data-retention
-  default. The Go plan works through the `/alpha/generate` fallback.
+  default. The Go plan works through the `/alpha/generate` fallback, and its usage sheet reads any key's
+  credits.
+- **Loop.** `/loop-on <aim>` keeps Pi working on its own, answer after answer, until someone stops it.
 - **Deletion from the database.** A removed session's transcript, tasks, documents, and spend record go along
   with its files.
 - **Changes across a folder of repositories.** One review with a chip per checkout, plus History, which shows

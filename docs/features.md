@@ -2,7 +2,7 @@
 
 The full tour. For setup, see the [README](../README.md).
 
-Loop, Command Code models, a removal that deletes a session's rows, Changes across a folder of repositories,
+Command Code models, Loop, a removal that deletes a session's rows, Changes across a folder of repositories,
 History, and a browser page that closes when Pi's run ends are the fork's own features, described in
 [FORK.md](../FORK.md).
 

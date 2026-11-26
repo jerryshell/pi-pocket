@@ -1,9 +1,10 @@
-// Command Code's usage in the menu, and its sheet: credits, plan, and the 5-hour and weekly windows. The owner alone
-// loads this module, so the numbers stay theirs.
+// Command Code's usage in the menu, and its sheet: credits, plan, and the 5-hour and weekly windows, for this account
+// or for a key typed into the sheet. The owner alone loads this module, so the numbers stay theirs.
 export const pocketApi = 2;
 
 const USAGE_URL = "https://commandcode.ai/usage";
 const REFRESH_MS = 5 * 60_000;
+const MAX_KEY_LENGTH = 512;
 const WINDOW_LABELS = { fiveHour: "5-hour", weekly: "Weekly" };
 /** Where the account's requests go: the Provider API its plan entitles, or Command Code's Go fallback. */
 const TRANSPORT_LABELS = {
@@ -89,10 +90,57 @@ export default function setup(pocket) {
 
     read().then(showHint, () => {});
 
+    /** The credits line, its bar, and a bar for each window: the same for this account and for a typed key. */
+    function Numbers({ usage }) {
+        return html`<div class="usage-head">
+                <div class="usage-remaining">
+                    ${money(usage.remaining)}
+                    <span class="muted"> left of ${money(usage.pool)}</span>
+                </div>
+                <div class="muted small">
+                    ${usage.percent}%
+                    used${usage.plan ? ` · plan ${usage.plan}` : ""}${periodEnd(usage.periodEnd)}
+                </div>
+            </div>
+            <div class="usage-bar" role="img" aria-label=${`${usage.percent}% used`}>
+                <span style=${`width: ${Math.min(100, Math.max(0, usage.percent))}%`}></span>
+            </div>
+            <div class="usage-windows">
+                ${usage.windows.map(
+                    (window) =>
+                        html`<div class="usage-window" key=${window.id}>
+                            <div class="usage-window-head">
+                                <span>${WINDOW_LABELS[window.id] ?? window.id}</span>
+                                <span class="muted">
+                                    ${window.used.toFixed(2)} / ${window.cap.toFixed(2)}
+                                </span>
+                            </div>
+                            <div class="usage-bar small">
+                                <span
+                                    style=${`width: ${Math.min(100, Math.max(0, window.percent))}%`}
+                                ></span>
+                            </div>
+                            <div class="muted small">
+                                ${window.percent}%
+                                used${window.resetAt ? ` · resets ${resetIn(window.resetAt)}` : ""}
+                            </div>
+                        </div>`,
+                )}
+            </div>
+            ${
+                usage.unavailable.length > 0 &&
+                html`<p class="muted small">Unavailable now: ${usage.unavailable.join(", ")}.</p>`
+            }`;
+    }
+
     function UsageSheet() {
         const [usage, setUsage] = useState(null);
         const [error, setError] = useState(null);
         const [busy, setBusy] = useState(false);
+        const [typed, setTyped] = useState("");
+        const [other, setOther] = useState(null);
+        const [otherError, setOtherError] = useState(null);
+        const [checking, setChecking] = useState(false);
 
         useEffect(() => {
             let live = true;
@@ -127,6 +175,33 @@ export default function setup(pocket) {
                 .finally(() => setBusy(false));
         };
 
+        // The key goes to the module's route for this read alone: it stays in this box, and comes back as no part of the
+        // answer, so the sheet forgets it as soon as it was sent.
+        const check = (event) => {
+            event.preventDefault();
+
+            const key = typed.trim();
+
+            if (key === "" || checking) {
+                return;
+            }
+
+            setChecking(true);
+            setOther(null);
+            setOtherError(null);
+
+            pocket
+                .api("usage", { apiKey: key })
+                .then(
+                    (next) => {
+                        setOther(next);
+                        setTyped("");
+                    },
+                    (failure) => setOtherError(failure?.message ?? String(failure)),
+                )
+                .finally(() => setChecking(false));
+        };
+
         return html`<div class="code-usage">
             ${
                 error &&
@@ -138,52 +213,10 @@ export default function setup(pocket) {
             ${!usage && !error && html`<${pocket.Loader} label="Reading Command Code usage" />`}
             ${
                 usage &&
-                html`<div class="usage-head">
-                        <div class="usage-remaining">
-                            ${money(usage.remaining)}
-                            <span class="muted"> left of ${money(usage.pool)}</span>
-                        </div>
-                        <div class="muted small">
-                            ${usage.percent}%
-                            used${usage.plan ? ` · plan ${usage.plan}` : ""}${periodEnd(usage.periodEnd)}
-                        </div>
-                    </div>
-                    <div class="usage-bar" role="img" aria-label=${`${usage.percent}% used`}>
-                        <span
-                            style=${`width: ${Math.min(100, Math.max(0, usage.percent))}%`}
-                        ></span>
-                    </div>
-                    <div class="usage-windows">
-                        ${usage.windows.map(
-                            (window) =>
-                                html`<div class="usage-window" key=${window.id}>
-                                    <div class="usage-window-head">
-                                        <span>${WINDOW_LABELS[window.id] ?? window.id}</span>
-                                        <span class="muted">
-                                            ${window.used.toFixed(2)} / ${window.cap.toFixed(2)}
-                                        </span>
-                                    </div>
-                                    <div class="usage-bar small">
-                                        <span
-                                            style=${`width: ${Math.min(100, Math.max(0, window.percent))}%`}
-                                        ></span>
-                                    </div>
-                                    <div class="muted small">
-                                        ${window.percent}%
-                                        used${window.resetAt ? ` · resets ${resetIn(window.resetAt)}` : ""}
-                                    </div>
-                                </div>`,
-                        )}
-                    </div>
+                html`<${Numbers} usage=${usage} />
                     <p class="muted small">
                         Requests: ${TRANSPORT_LABELS[usage.transport] ?? TRANSPORT_LABELS.unknown}
                     </p>
-                    ${
-                        usage.unavailable.length > 0 &&
-                        html`<p class="muted small">
-                            Unavailable now: ${usage.unavailable.join(", ")}.
-                        </p>`
-                    }
                     <div class="usage-foot">
                         <span class="muted small">${readAt(usage.at)}</span>
                         <button class="button small" disabled=${busy} onClick=${again}>
@@ -195,6 +228,53 @@ export default function setup(pocket) {
                             >Full detail on Command Code</a
                         >
                     </p>`
+            }
+            <form class="usage-key" onSubmit=${check}>
+                <div class="field">
+                    <label class="label" for="commandcode-usage-key">Check another key</label>
+                    <div class="usage-key-row">
+                        <input
+                            id="commandcode-usage-key"
+                            type="password"
+                            autocomplete="off"
+                            spellcheck="false"
+                            maxlength=${MAX_KEY_LENGTH}
+                            placeholder="Paste an API key"
+                            value=${typed}
+                            onInput=${(event) => setTyped(event.currentTarget.value)}
+                        />
+                        <button
+                            class="button small"
+                            type="submit"
+                            disabled=${checking || typed.trim() === ""}
+                        >
+                            ${checking ? "Checking…" : "Check"}
+                        </button>
+                    </div>
+                </div>
+                <p class="muted small">
+                    Read once for that key. It is not saved, and it is not used for this account.
+                </p>
+            </form>
+            ${
+                otherError &&
+                html`<div class="error-box">
+                    <p>${otherError}</p>
+                </div>`
+            }
+            ${
+                other &&
+                html`<div class="usage-other">
+                    <div class="usage-other-head">
+                        <span>Another key</span>
+                        <button class="button small" onClick=${() => setOther(null)}>Clear</button>
+                    </div>
+                    ${
+                        other.keyName &&
+                        html`<p class="muted small">Command Code names it “${other.keyName}”.</p>`
+                    }
+                    <${Numbers} usage=${other} />
+                </div>`
             }
         </div>`;
     }

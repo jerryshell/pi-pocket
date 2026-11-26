@@ -56,7 +56,7 @@ counterpart.
   (kept in Pi's `settings.json`) or `CMD_ZDR=0` turns it off. The Go plan's `/alpha/generate` fallback never
   carries it.
 - `/commandcode-quota` shows the account's credits, plan, usage, and 5-hour and weekly windows, and Menu →
-  **Command Code usage** shows them in a sheet.
+  **Command Code usage** shows them in a sheet, where another key's usage can be read too.
 
 Upstream has no Command Code provider. This one is vendored from
 [`patlux/pi-commandcode-provider`](https://github.com/patlux/pi-commandcode-provider) (MIT), and the Go plan

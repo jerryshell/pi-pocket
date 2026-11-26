@@ -60,3 +60,39 @@
     justify-content: space-between;
     gap: 8px;
 }
+
+/* The key checker at the sheet's end: a field and its button on one line, then what a typed key answered. */
+.usage-key {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 14px;
+    border-top: 1px solid var(--hair);
+}
+
+.usage-key-row {
+    display: flex;
+    gap: 8px;
+}
+
+.usage-key-row input {
+    min-width: 0;
+}
+
+.usage-other {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--hair-2);
+    border-radius: var(--r-card);
+    background: var(--card-2);
+}
+
+.usage-other-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-weight: 600;
+}

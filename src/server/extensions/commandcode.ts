@@ -85,6 +85,9 @@ type OAuthLogin = Parameters<NonNullable<ProviderConfig["oauth"]>["login"]>[0];
 /** How long one answer of the account's endpoints serves the menu and the sheet. */
 const QUOTA_FRESH_MS = 30_000;
 
+/** The longest key the sheet takes: past any Command Code key, short of a paste of something else. */
+const MAX_TYPED_KEY = 512;
+
 /** Pi's name for Command Code's own api: one stream that picks each model's wire, and the fallback, per request. */
 const COMMAND_CODE_API = "commandcode";
 
@@ -117,6 +120,8 @@ interface UsageView {
         resetAt: number | null;
     }[];
     unavailable: string[];
+    /** What Command Code calls the key behind these numbers, when it says: the sheet shows it for a typed key. */
+    keyName: string | null;
     /** Where the account's last request went: the Provider API, or the Go fallback. */
     transport: CommandCodeTransport;
 }
@@ -493,12 +498,44 @@ export default async function createCommandCode(
                 resetAt: limit.resetAt,
             })),
             unavailable: [...(quota.unavailable ?? [])],
+            keyName: quota.account.keyName ?? null,
             transport: router.getTransport(),
         };
     };
 
-    const usageRoute = async (fresh: boolean): Promise<UsageView> => {
-        const result = await readQuota(fresh);
+    /**
+     * The numbers, for this account's stored key or one the owner typed for a single read. A typed key is used here and
+     * kept nowhere: its answer is not cached, and it never comes back in the sheet.
+     */
+    const usageRoute = async (body: { fresh?: unknown; apiKey?: unknown }): Promise<UsageView> => {
+        if (body.apiKey !== undefined && typeof body.apiKey !== "string") {
+            throw web.error(400, "A Command Code API key is text.");
+        }
+
+        const typed = typeof body.apiKey === "string" ? sanitizeApiKey(body.apiKey) : "";
+
+        if (body.apiKey !== undefined && typed === "") {
+            throw web.error(400, "Enter a Command Code API key to check.");
+        }
+
+        if (typed.length > MAX_TYPED_KEY) {
+            throw web.error(400, "That is longer than any Command Code API key.");
+        }
+
+        let result: CommandCodeQuotaResult;
+
+        if (typed === "") {
+            result = await readQuota(body.fresh === true);
+        } else {
+            // The same header as the account's reads, so zero data retention covers a key the owner typed too.
+            const quotaHeaders = zdrHeaders(zdr);
+
+            result = await fetchCommandCodeQuota({
+                apiKey: typed,
+                baseUrl: accountApiBase(apiBase),
+                ...(quotaHeaders === undefined ? {} : { extraHeaders: quotaHeaders }),
+            });
+        }
 
         if (!result.ok) {
             throw web.error(
@@ -508,18 +545,16 @@ export default async function createCommandCode(
         }
 
         // `readQuota` stored the view of the answer it gave, cached or new; the transport is the one now.
-        return { ...asked!.view, transport: router.getTransport() };
+        const view = typed === "" ? asked!.view : usageView(result.quota, Date.now());
+
+        return { ...view, transport: router.getTransport() };
     };
 
     // The owner's alone: the menu row, its sheet, and this route are not there for anyone else.
-    web.route("GET", "usage", () => usageRoute(false), { access: "owner" });
-    web.route(
-        "POST",
-        "usage",
-        (request: WebRequest) =>
-            usageRoute((request.body as { fresh?: unknown } | undefined)?.fresh === true),
-        { access: "owner" },
-    );
+    web.route("GET", "usage", () => usageRoute({}), { access: "owner" });
+    web.route("POST", "usage", (request: WebRequest) => usageRoute(request.body), {
+        access: "owner",
+    });
     web.client("commandcode", { access: "owner" });
 
     // The owner's alone: the card goes to the session it was typed in, so the account's login (an email) stays out.

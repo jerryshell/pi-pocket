@@ -267,8 +267,20 @@ before(async () => {
             return;
         }
 
+        // A key the usage sheet was handed gets numbers of its own, so a test can tell it from this account's.
+        const anotherKey = request.headers.authorization === "Bearer user_someone_else";
+
         response.writeHead(200, { "content-type": "application/json" });
-        response.end(JSON.stringify(ACCOUNT[path] ?? LIVE));
+        response.end(
+            JSON.stringify(
+                anotherKey && path === "/alpha/billing/credits"
+                    ? {
+                          credits: { monthlyCredits: 3, purchasedCredits: 0, freeCredits: 0 },
+                          windowLimits: { fiveHour: { used: 1, cap: 2 } },
+                      }
+                    : (ACCOUNT[path] ?? LIVE),
+            ),
+        );
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
@@ -629,6 +641,74 @@ test("the usage route answers the owner, and one read serves the menu for a mome
 
     assert.equal(kept.status, 200, "the last good numbers stay for the moment");
     assert.deepEqual(kept.data, fresh.data);
+});
+
+test("the usage sheet reads a key of its own, and keeps it nowhere", async () => {
+    const ownerToken = app.config.ownerToken;
+    const account = await call(ownerToken, "/api/x/commandcode/usage", {
+        method: "POST",
+        body: { fresh: true },
+    });
+
+    assert.equal(account.status, 200);
+
+    const before = calls.length;
+    const other = await call(ownerToken, "/api/x/commandcode/usage", {
+        method: "POST",
+        body: { apiKey: "user_someone_else" },
+    });
+
+    assert.equal(other.status, 200);
+    assert.equal(other.data.remaining, 3, "the numbers are the typed key's, not the account's");
+    assert.equal(other.data.keyName, null);
+    assert.ok(!JSON.stringify(other.data).includes("someone_else"), "the key does not come back");
+
+    const asked = calls.slice(before);
+
+    assert.equal(asked.filter((each) => each.path.startsWith("/alpha/")).length, 4);
+    assert.ok(
+        asked.every((each) => each.authorization === "Bearer user_someone_else"),
+        "every endpoint is read with the key that was typed",
+    );
+    assert.ok(
+        asked.every((each) => each.zdr === "1"),
+        "zero data retention covers a key typed into the sheet",
+    );
+
+    // The typed key is not this account's: its answer is neither cached for the menu nor used by the stored sign-in.
+    const after = calls.length;
+    const accountAgain = await call(ownerToken, "/api/x/commandcode/usage");
+
+    assert.equal(accountAgain.status, 200);
+    assert.deepEqual(accountAgain.data, account.data);
+    assert.ok(
+        calls.slice(after).every((each) => each.authorization === "Bearer user_test"),
+        "the stored key still answers for this account",
+    );
+
+    // What the sheet will not send: nothing, a key that is not text, or one longer than any key.
+    for (const apiKey of ["   ", 42, "x".repeat(513)]) {
+        const refused = await call(ownerToken, "/api/x/commandcode/usage", {
+            method: "POST",
+            body: { apiKey },
+        });
+
+        assert.equal(refused.status, 400);
+    }
+
+    // A key Command Code refuses says so, and leaves the account's numbers as they were.
+    accountFails = true;
+
+    const rejected = await call(ownerToken, "/api/x/commandcode/usage", {
+        method: "POST",
+        body: { apiKey: "user_revoked" },
+    });
+
+    accountFails = false;
+
+    assert.equal(rejected.status, 502);
+    assert.match(String(rejected.data.error ?? rejected.data.message), /401/);
+    assert.deepEqual((await call(ownerToken, "/api/x/commandcode/usage")).data, account.data);
 });
 
 test("the usage route and the menu are the owner's alone", async () => {

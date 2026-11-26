@@ -74,10 +74,13 @@ Pi Pocket adapts it in `../extensions/commandcode.ts`:
   `billing/subscriptions`, and `usage/summary`, and shows them as a card. The card leaves
   out the account's login, because everyone in the session sees it.
 - Menu → **Command Code usage** (the owner's too) opens a sheet with the same numbers,
-  a bar for the credits and for each window, and Refresh; its hint shows the rest. The
-  browser module is `extensions/commandcode/` (`index.js`, `style.css`), served by two
-  owner-only routes, `GET usage` and `POST usage` (`{ fresh: true }` skips a 30-second
-  cached answer).
+  a bar for the credits and for each window, and Refresh; its hint shows the rest. A key
+  typed into it is read for that one answer and kept nowhere: its numbers show under the
+  account's, and they never replace the account's cached answer. The browser module is
+  `extensions/commandcode/` (`index.js`, `style.css`), served by two owner-only routes,
+  `GET usage` and `POST usage` (`{ fresh: true }` skips a 30-second cached answer;
+  `{ apiKey }` reads that key instead of the stored one, and returns the key's own name
+  when Command Code gives one).
 
 Not included: upstream's `/commandcode-refresh`, `/commandcode-status`, `/commandcode-endpoint`,
 and `/commandcode-diagnostics` commands (the Providers sheet has the refresh), and the
