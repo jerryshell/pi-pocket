@@ -57,6 +57,8 @@ counterpart.
   carries it.
 - `/commandcode-quota` shows the account's credits, plan, usage, and 5-hour and weekly windows, and Menu →
   **Command Code usage** shows them in a sheet, where another key's usage can be read too.
+- A 503 that says Command Code could not verify the credit balance is retried without end, until Stop or
+  Interrupt, instead of failing the run as a billing error.
 
 Upstream has no Command Code provider. This one is vendored from
 [`patlux/pi-commandcode-provider`](https://github.com/patlux/pi-commandcode-provider) (MIT), and the Go plan

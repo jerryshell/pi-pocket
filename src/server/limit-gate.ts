@@ -32,6 +32,7 @@ import {
 import { isContextOverflow } from "@earendil-works/pi-ai/utils/overflow";
 import {
     classify,
+    CREDIT_CHECK,
     messageStatus,
     type ResponseFacts,
     responseFacts,
@@ -211,6 +212,7 @@ type Gate = {
     resetAt?: number;
     source?: Source;
     subscription?: true;
+    unlimited?: true;
     reason: string;
     tries: number;
     state: "waiting" | "probing" | "refusing";
@@ -289,6 +291,10 @@ function describeLimit(
         openrouter: "OpenRouter",
     };
     const name = names[provider] ?? provider;
+
+    if (CREDIT_CHECK.test(message)) {
+        return `${name} could not check its credit balance`;
+    }
 
     if (scope === "request") {
         return `${name} could not continue this conversation`;
@@ -893,6 +899,10 @@ export class LimitGate {
 
     /** When a wait that began at `since` must end: the owner's maximum for a known reset, less for load with no time. */
     #deadline(gate: Gate): number {
+        if (gate.unlimited === true) {
+            return Number.POSITIVE_INFINITY;
+        }
+
         const maxReset = this.#deps.hours() * 3_600_000;
 
         return (
@@ -992,6 +1002,11 @@ export class LimitGate {
                 this.#save();
             }
 
+            if (verdict.unlimited === true && gate.unlimited !== true) {
+                gate.unlimited = true;
+                this.#save();
+            }
+
             if (gate.state !== "refusing" && verdict.resetAt !== undefined) {
                 const jitter =
                     tuning.resetJitterMs[0] +
@@ -1035,6 +1050,7 @@ export class LimitGate {
                 tries: 0,
                 state: "waiting",
                 waiters: new Set(),
+                ...(verdict.unlimited === true ? { unlimited: true as const } : {}),
             };
             this.#gates.set(key, gate);
             // The provider's own text can hold ids of someone else's organisation: only the owner's log has it.
@@ -1059,7 +1075,13 @@ export class LimitGate {
         let until: number;
         let why: string | undefined;
 
-        if (verdict.resetAt !== undefined) {
+        if (verdict.unlimited === true) {
+            gate.unlimited = true;
+            gate.kind = "backoff";
+            delete gate.resetAt;
+            delete gate.source;
+            until = now + this.#backoff(gate);
+        } else if (verdict.resetAt !== undefined) {
             const jitter =
                 tuning.resetJitterMs[0] +
                 this.#random() * (tuning.resetJitterMs[1] - tuning.resetJitterMs[0]);
@@ -1091,6 +1113,7 @@ export class LimitGate {
         if (
             why === undefined &&
             !gate.subscription &&
+            gate.unlimited !== true &&
             Math.max(gate.tries, waiter.tries) > tuning.maxTries
         ) {
             why = triesExhausted(tuning.maxTries);
@@ -1404,6 +1427,7 @@ export class LimitGate {
                 resetAt: gate.resetAt,
                 source: gate.source,
                 subscription: gate.subscription,
+                unlimited: gate.unlimited,
                 reason: gate.reason,
                 tries: gate.tries,
             }));
@@ -1514,6 +1538,7 @@ export class LimitGate {
             ...(resetAt === undefined ? {} : { resetAt }),
             ...(source ? { source: each.source as Source } : {}),
             ...(each.subscription === true ? { subscription: true as const } : {}),
+            ...(each.unlimited === true ? { unlimited: true as const } : {}),
             reason: text(each.reason) ?? "",
             tries,
             state: refusing ? "refusing" : "waiting",

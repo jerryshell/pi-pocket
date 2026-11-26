@@ -268,3 +268,27 @@ test("only limit headers are kept from a response, never a key or a token", () =
 
     assert.deepEqual(kept, { status: 429, headers: { "retry-after": "30" } });
 });
+
+test("Command Code's credit check that is briefly unavailable waits without end", () => {
+    const body = JSON.stringify({
+        message: "Couldn't verify your credit balance just now — please try again in a moment.",
+        type: "overloaded_error",
+        code: "INTERNAL_SERVER_ERROR",
+    });
+    const verdict = ask(`commandcode API error (503): ${body}`, 503, {}, "commandcode");
+
+    assert.equal(verdict.type, "limit");
+
+    if (verdict.type === "limit") {
+        assert.equal(verdict.scope, "account");
+        assert.equal(verdict.backoff, true);
+        assert.equal(verdict.unlimited, true);
+    }
+
+    // A real billing error is still not waited for.
+    assert.equal(ask("402 insufficient credits", 402).type, "other");
+    assert.equal(
+        ask('commandcode API error (503): {"message":"insufficient credits"}', 503).type,
+        "other",
+    );
+});

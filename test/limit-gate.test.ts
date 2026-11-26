@@ -700,3 +700,30 @@ test("an adapter that refuses a custom fetch (Google) gets none", async () => {
     assert.equal(rt.calls[0]!.fetch, undefined);
     assert.equal(typeof rt.calls[1]!.fetch, "function");
 });
+
+test("Command Code's credit check is retried without end", async () => {
+    const body = JSON.stringify({
+        message: "Couldn't verify your credit balance just now — please try again in a moment.",
+        type: "overloaded_error",
+        code: "INTERNAL_SERVER_ERROR",
+    });
+    const error = `commandcode API error (503): ${body}`;
+    const g = gate({
+        tuning: { ...TUNING, backoffMs: [5], maxBackoffMs: 10, maxTries: 2 },
+    });
+    // More tries than maxTries: an ordinary backoff would give up on the third.
+    const rt = fake([
+        { fail: error },
+        { fail: error },
+        { fail: error },
+        { fail: error },
+        { ok: true },
+    ]);
+
+    g.install(rt.models);
+
+    const result = await ask(rt, "m", "commandcode");
+
+    assert.equal(result.stopReason, "stop");
+    assert.equal(rt.calls.length, 5);
+});

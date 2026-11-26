@@ -57,6 +57,8 @@ export type Classified =
           backoff: boolean;
           /** An unknown-reset subscription limit uses the owner's full wait budget, not the overload budget. */
           subscription?: true;
+          /** Waited for without end (Command Code's credit check, briefly unavailable). Stop or Interrupt still ends it. */
+          unlimited?: true;
           /** A window of days (Claude's 7-day, a Codex window over 300 minutes): not waited for, failed with its reset. */
           long?: true;
           reason: string;
@@ -93,6 +95,12 @@ const REFUSED =
 /** Limits of an account's plan: the sign-in, not the model. An unknown reset uses bounded subscription retries. */
 const USAGE =
     /GoUsageLimitError|Monthly usage limit reached|usage_limit_reached|subscription_sharing_usage_limit_exceeded|usage[ _-]limit|session limit|available balance/i;
+
+/**
+ * Command Code's credit check can be briefly unavailable. It is load, not a billing problem, so it is waited for as
+ * long as it takes, unlike an account that is out of credit.
+ */
+export const CREDIT_CHECK = /\bcouldn['’]?t verify your credit balance just now\b/i;
 const LONG_WINDOW =
     /weekly|per[_ -]?week|monthly|per[_ -]?month|daily|per[_ -]?day|PerDay|PerMonth|seven_day|7[- ]day|\b[TR]PD\b/i;
 const SHORT_WINDOW = /\b5[- ]?hours?\b|five[- ]hour|session limit/i;
@@ -488,6 +496,17 @@ export function classify(input: LimitInput): Classified {
 
     if ((SIGN_IN.test(message) && !(status === 403 && usageShape)) || status === 401) {
         return { type: "other", why: "sign-in or permission" };
+    }
+
+    // Command Code's credit check can be briefly unavailable: a 503 that clears, not a billing problem.
+    if (CREDIT_CHECK.test(message) && (status === undefined || statusWaits(status))) {
+        return {
+            type: "limit",
+            scope: "account",
+            backoff: true,
+            unlimited: true,
+            reason: cut(message),
+        };
     }
 
     // Google's quota errors include generic billing-help prose; Z.ai names the price of EXTRA usage, not the plan.
