@@ -6,25 +6,26 @@
 
 </div>
 
-This checkout follows upstream's release tags by merging them into `main`. Everything below is made here,
-stays here, and is carried through each sync. The vendored Command Code provider has its own sync rules in
+This checkout merges upstream's release tags into `main`. This fork makes each change below and keeps it
+through every sync. The vendored Command Code provider has its own sync rules in
 [src/server/commandcode/README.md](src/server/commandcode/README.md).
 
 ## What this fork adds
 
-- **Command Code, built in.** A provider with its live catalog, API-key or browser sign-in, zero data
-  retention by default, and the Go plan's `/alpha/generate` fallback. Its sheet shows credits, usage windows,
-  and any key's usage; a 503 that only failed to check the balance is retried, not failed as billing.
+- **Command Code is built in.** It has a live catalog, API-key or browser sign-in, zero data retention by
+  default, and the Go plan's `/alpha/generate` fallback. Its sheet shows credits, usage windows, and any key's
+  usage. Pi Pocket retries a 503 that only failed to check the balance. It does not fail the run as a billing
+  error.
 - **Loop.** `/loop-on <aim>` keeps Pi working, answer after answer, until someone stops it.
-- **A removal that finishes the job.** Removing a session deletes its rows from `pocket.sqlite`. A live fork
-  keeps the parent history it reads until the last fork goes.
-- **Changes across a folder of repositories.** One review with a chip per checkout, and History with a
+- **Session removal.** Removing a session deletes its rows from `pocket.sqlite`. A live fork keeps the
+  parent history it reads until someone removes the last fork.
+- **Changes across a folder of repositories.** One review has a chip per checkout. History lists a
   repository's commits and each one's diff.
-- **Artifacts with version-level delete.** Remove one version and keep the others; the chat names who removed
-  it, and All artifacts has a delete button.
-- **Cache miss notices.** An answer that paid a large prompt-cache miss says what was billed again, and
-  whether a model switch or a long idle came before.
-- **A browser page that closes after use.** Pi's page goes when its run ends, and the tool takes `close`.
+- **Artifacts.** You can delete one version and keep the others. The chat names who removed it, and All
+  artifacts has a delete button.
+- **Cache miss notices.** An answer that paid a large prompt-cache miss says what was billed again. It also
+  says whether a model switch or a long idle came before.
+- **Pi's browser page closes after use.** Pi's page closes when its run ends. The tool takes `close`.
 
 [FORK.md](FORK.md) is the full list: what each addition does, where its code and tests are, and every file a
 merge must keep. [docs/features.md](docs/features.md) is the app's feature tour, and [docs/map.md](docs/map.md)

@@ -1,8 +1,7 @@
 # Working on this fork
 
 This is a fork of [Pi Pocket](https://github.com/TannerMidd/pi-pocket), maintained separately. It takes no
-pull requests and cuts no releases; changes are made here and carried through each sync of upstream's release
-tags. [FORK.md](FORK.md) lists what differs and what a merge must keep.
+pull requests and cuts no releases. Changes happen here, and each sync of upstream's release tags keeps them. [FORK.md](FORK.md) lists what differs and what a merge must keep.
 
 ## Make the change
 
@@ -13,7 +12,7 @@ tags. [FORK.md](FORK.md) lists what differs and what a merge must keep.
   check, not a push check.
 - To report a security problem, do not open an issue. Read [SECURITY.md](SECURITY.md).
 
-## Keep the docs true
+## Keep the docs accurate
 
 - Fork differences and merge rules live in [FORK.md](FORK.md). Other pages answer their own question and
   point there instead of restating it.

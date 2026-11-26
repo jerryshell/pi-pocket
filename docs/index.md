@@ -31,7 +31,7 @@ A drop-in extension stays when Pi Pocket updates, and the owner can turn it off 
 
 ## The documents
 
-- [../FORK.md](../FORK.md): what this fork changes from upstream, and what a sync must keep; [../README.md](../README.md) is the short list.
+- [../FORK.md](../FORK.md): what this fork changes from upstream, and what a sync must keep. [../README.md](../README.md) is the short list.
 - [customizing.md](customizing.md): how to change how Pi works, without code.
 - [extensions.md](extensions.md): how to write extensions: tools, prompt sections, hooks, and pages, buttons, and routes in the app. It is an index: read it, then the guides in [extensions/](extensions/) that your task needs.
     - The members of `host`, `web`, and `pocket` are in [extensions/reference/](extensions/reference/host.md).

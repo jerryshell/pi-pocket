@@ -1,11 +1,11 @@
 # Pi Pocket, this fork
 
 Pi Pocket, maintained separately as a fork of [TannerMidd/pi-pocket](https://github.com/TannerMidd/pi-pocket).
-It follows that project's releases by merging its release tags into `main`. Changes upstream does not have are
-made here and stay here, and a sync carries them forward.
+It follows that project's releases by merging its release tags into `main`. This fork makes changes upstream
+does not have and keeps them through each sync.
 
-This page is the single list of the fork's differences from upstream: what each addition does, where its code
-and tests are, and what a merge must keep. [README.md](README.md) is the short list;
+This page is the single list of the fork's differences from upstream. It says what each addition does, where
+its code and tests are, and what a merge must keep. [README.md](README.md) is the short list;
 [docs/features.md](docs/features.md) is the app's feature tour; [docs/map.md](docs/map.md) says which file
 owns what; [docs/architecture.md](docs/architecture.md) says what depends on what;
 [AGENTS.md](AGENTS.md) and [docs/self-editing.md](docs/self-editing.md) say how to edit and check;
@@ -39,12 +39,12 @@ and what its own sync keeps.
   with its thinking levels, image input, context limits, and display prices.
 - Zero data retention is on by default. Every Provider API request asks for it, and `/commandcode-zdr off`
   (kept in Pi's `settings.json`) or `CMD_ZDR=0` turns it off. The Go plan's `/alpha/generate` fallback never
-  carries it.
+  sends it.
 - `/commandcode-quota` is the owner's card for the account's credits, plan, usage, and 5-hour and weekly
   windows. Menu → **Command Code usage** shows the same numbers in a sheet, and reads any API key typed there
-  for one answer: the key is not saved, cached, or returned.
-- A 503 that says Command Code could not verify the credit balance is retried without end, until Stop or
-  Interrupt, instead of failing the run as a billing error. The wait survives a restart; a real credit or
+  for one answer. Pi Pocket does not save, cache, or return that key.
+- Pi Pocket retries a 503 that says Command Code could not verify the credit balance without end, until Stop
+  or Interrupt, instead of failing the run as a billing error. The wait survives a restart. A real credit or
   billing error still fails at once.
 
 Upstream has no Command Code provider. This one is vendored from
@@ -52,7 +52,7 @@ Upstream has no Command Code provider. This one is vendored from
 needs the `/alpha/generate` client upstream removed. [Its README](src/server/commandcode/README.md) says what
 is copied, what is adapted, how the fallback works, and what a sync of that code must keep.
 
-The code lives in `src/server/commandcode/`, `src/server/extensions/commandcode.ts`, and
+The code is in `src/server/commandcode/`, `src/server/extensions/commandcode.ts`, and
 `src/server/extensions/commandcode/`, with `commandcode` entries in `limit-gate.ts`'s `RECORDS_FETCH` and
 `reload.ts`'s `ORDER`. Tests are in `test/commandcode*.test.ts`, and the credit-check wait in
 `test/limits.test.ts` and `test/limit-gate.test.ts`. Turn it off in Menu → Extensions like any module.
@@ -72,17 +72,17 @@ The code lives in `src/server/commandcode/`, `src/server/extensions/commandcode.
 - Nothing stops a loop except people, and the session's spend limit if the owner set one. Turn it off in
   Extensions.
 
-The code lives in `src/server/extensions/loop.ts` and `src/server/extensions/loop/`, with `loop.ts` in
+The code is in `src/server/extensions/loop.ts` and `src/server/extensions/loop/`, with `loop.ts` in
 `reload.ts`'s `ORDER`. Tests are in `test/loop.test.ts` and `test/loop-ui.test.ts`. Upstream has no
 counterpart.
 
-### A removal that finishes the job
+### A removal that clears the database
 
 Upstream takes a removed session out of the app with its files and leaves the transcript in the database,
-until Pi Durable grows a way to purge a conversation. This fork finishes the job. Once a session's worktree,
-files, uploads, and logs are gone, its conversations' rows go too: entries, tasks, submissions, documents,
-revisions, and its per-session spend record. Pi Durable has no delete of a conversation, so `purge.ts` deletes
-those rows from Pi Durable's tables directly.
+until Pi Durable grows a way to purge a conversation. This fork purges it. Once a session's worktree, files,
+uploads, and logs are gone, its conversations' entries, tasks, submissions, documents, revisions, and
+per-session spend record go too. Pi Durable has no delete of a conversation, so `purge.ts` deletes those rows
+from Pi Durable's tables directly.
 
 A fork reads the history before its fork point through its parent conversation's entries. When the parent
 session goes first, the conversation row and the entries the fork reads stay, like the uploads a fork reads:
@@ -102,7 +102,7 @@ adds:
 - the confirm's copy, which says a removal takes the transcript, tasks, and documents out of the database,
   except the history a live fork keeps.
 
-The code lives in `src/server/purge.ts`, `PocketApp.purgeStoredData`, the call in `session-cleanup.ts`'s
+The code is in `src/server/purge.ts`, `PocketApp.purgeStoredData`, the call in `session-cleanup.ts`'s
 `#finish`, `SpendDoc.forget`, the guard at the top of `commands.ts`'s `#fork`, the route in `http/api.ts`,
 `web/sessions.js`, `web/sheets/session.js`, and `extensions/session-cleanup/index.js` (the confirm's copy). Tests are in `test/session-cleanup.test.ts` and
 `test/sessions.test.ts`. `pocket.purge` stays defined in `docs.ts` because stored kinds are not removed, and
@@ -125,48 +125,47 @@ what is already committed.
   up to 50. A commit opens its own diff under its row; the repository chips stay, and a clean repository has
   nothing to review but its history.
 
-The code lives in `src/server/changes.ts` (`reposUnder`, `repoState`, `commitsIn`, `commitDiffIn`),
+The code is in `src/server/changes.ts` (`reposUnder`, `repoState`, `commitsIn`, `commitDiffIn`),
 `src/server/branches.ts` (the `/commits` route), `src/server/workspace.ts`, `web/app.js`, `web/diff.js`,
 `web/store.js`, `web/style.css`, and `web/sheets/branch.js`. Tests are in `test/changes.test.ts` and
 `test/history.test.ts`. Upstream has no counterpart.
 
-### Artifacts: version delete, and a line when one goes
+### Artifact deletion
 
 Upstream deletes an artifact with all its versions and leaves only the replies' deleted cards. This fork also
-deletes one version, says in the chat who removed one, and lets All artifacts delete.
+deletes one version, writes in the chat who removed it, and adds a delete button to All artifacts.
 
-- `DELETE /api/c/:id/artifacts/:artifact` keeps its upstream meaning: the artifact and every version go.
+- `DELETE /api/c/:id/artifacts/:artifact` still removes the artifact and every version.
 - `DELETE /api/c/:id/artifacts/:artifact/:version` removes one version's body, the design comments made on
   that version, and share links pinned to it. The other versions, their assets, the artifact's saved state,
-  and links that follow the newest version stay. The last version takes the artifact with it.
-- The bin on a version's card in the Artifacts sheet deletes that version; the viewer's bin deletes the
+  and links that follow the newest version stay. Deleting the last version also deletes the artifact.
+- The bin on a version's card in the Artifacts sheet deletes that version. The viewer's bin deletes the
   version it shows, and **delete all** removes the artifact. All artifacts has a trash button for the whole
   artifact.
-- The activity line names the version removed, or the artifact when its last version goes. A card that names
-  a deleted version says it was deleted, and the viewer says so and offers the latest version. The version
-  number is kept in `ended`, so it is never used again.
+- The activity line names the version removed, or the artifact when someone removes its last version. A card
+  that names a deleted version says it was deleted, and the viewer says so and offers the latest version. Pi
+  Pocket records the version number in `ended` so a new version never reuses it.
 
-The code lives in `src/server/artifacts.ts`, `src/server/http/conversation-routes.ts`,
+The code is in `src/server/artifacts.ts`, `src/server/http/conversation-routes.ts`,
 `src/server/docs.ts` (`ended`), `web/sheets/viewers.js`, `web/sheets/all-artifacts.js`, `web/rich.js`, and
 `web/style.css`. Tests are in `test/artifact-delete.test.ts`, `test/artifact-overview.test.ts`, and
-`test/shares.test.ts`. The whole-artifact delete is upstream's; the version delete, the activity line, and
-the All artifacts delete are the fork's.
+`test/shares.test.ts`. Upstream has the whole-artifact delete. The fork adds the version delete, the activity
+line, and the All artifacts delete.
 
 ### Cache miss notices
 
-Pi's own notices for a prompt cache miss (`showCacheMissNotices`) are a TUI setting, and its
-`core/cache-stats.ts` is not exported by its package. The fork ports the count to Pi Durable's entries: a
-request whose prompt the provider no longer held cached pays for those tokens again, and the answer that paid
-says so under its last words, with the tokens and roughly what they cost. It names a model switch, or 5
-minutes or more of idle, as the likely cause; it leaves out the first request, the context after a compaction
-or a fresh start, and a provider that never reports cache use; and it shows a miss of 20,000 tokens or $0.10
-and more. A miss paid by a tool call shows with the answer that ends its run. The status line's cache item
-adds the session's total, and Appearance → Conversation turns the line off.
+Pi's terminal app has its own notices for a prompt cache miss (`showCacheMissNotices`). Pi's package does not
+export `core/cache-stats.ts`. The fork ports the count to Pi Durable's entries. A request whose prompt the
+provider no longer held cached pays for those tokens again. The answer that paid says so under its last words,
+with the tokens and roughly what they cost. It names a model switch, or 5 minutes or more of idle, as the likely cause. It leaves out the first
+request, the context after a compaction or a fresh start, and a provider that never reports cache use. It
+shows a miss of at least 20,000 tokens or $0.10. A tool call's cache miss shows with the answer that ends its
+run. The status line's cache item adds the session's total. Appearance → Conversation turns the line off.
 
-The code lives in `src/server/cache-misses.ts`, with `entry-presentation.ts`'s option, `room.ts`'s scan, `projection.ts`'s `cacheMiss` and
-`cacheWaste`, `web/turns.js`'s run total, `web/transcript.js`'s line, and `web/theme.js`'s switch. Tests are
-in `test/cache-misses.test.ts`, `test/cache-waste.test.ts`, and `test/cache-waste-ui.test.ts`. Upstream has
-no counterpart.
+The code is in `src/server/cache-misses.ts`, with `entry-presentation.ts`'s option, `room.ts`'s scan,
+`projection.ts`'s `cacheMiss` and `cacheWaste`, `web/turns.js`'s run total, `web/transcript.js`'s line, and
+`web/theme.js`'s switch. Tests are in `test/cache-misses.test.ts`, `test/cache-waste.test.ts`, and
+`test/cache-waste-ui.test.ts`. Upstream has no counterpart.
 
 ### A browser page that closes after use
 
@@ -178,15 +177,15 @@ five minutes more. In this fork:
 - The tool takes `close`, for a page it is done with before the run ends.
 - The browser stops a minute after its last page closed, not five, and the next page starts it again.
 
-The code lives in `src/server/browser.ts`, `src/server/browser/page.ts`,
+The code is in `src/server/browser.ts`, `src/server/browser/page.ts`,
 `src/server/extensions/browser.ts`, `src/server/http/browser-routes.ts`, and `src/server/host.ts`
 (`browsers` gains `page` and `close`). Tests are in `test/browser.test.ts`. Upstream has no counterpart.
 
 ## Shared files a merge must keep
 
-New files are the fork's own and need no resolution. These are upstream's files, changed here: take the
+New files are the fork's own and need no resolution. These are upstream's files changed here. Take the
 fork's side, then make the new upstream behavior fit it. For `package.json`, resolve the dependencies first and
-run `npm install` for `package-lock.json` rather than taking either lock whole. Merge the docs by hand, keeping
+run `npm install` for `package-lock.json` rather than taking either lock whole. Merge the docs by hand. Keep
 the fork's text and the new upstream facts around it. [docs/map.md](docs/map.md) lists every file.
 
 | Area                 | Shared files, and the change to keep                                                                                                                                                               |
@@ -218,7 +217,7 @@ Run the tests [docs/self-editing.md](docs/self-editing.md#checking-a-change) ask
 slow release check, not a push check. Restart the server after a change outside `extensions/`, as
 [AGENTS.md](AGENTS.md) says. Then `git push origin main`.
 
-Every row above is a decision a sync must keep. Read this page before resolving a conflict, and do not
+Each row above names a change a sync must keep. Read this page before resolving a conflict, and do not
 restate its rules in another page.
 
 ## The fork's own rules
@@ -226,17 +225,17 @@ restate its rules in another page.
 - **No GitHub Actions.** No file under `.github/workflows/` remains; when a sync brings one back, delete it.
   This repository is a working copy rather than a distribution. It takes no pull requests, cuts no releases,
   and deploys no docs site.
-- **Tooling is the fork's.** Formatting and linting use Oxfmt and Oxlint (`.oxfmtrc.json`,
-  `.oxlintrc.json`), not Prettier and ESLint. The padding rule runs through `@stylistic/eslint-plugin`; `eslint`
-  stays in `devDependencies` only as its peer and is not run. Take the fork's configs and scripts through a
-  sync, and run `npm run format` after resolving a formatting conflict.
-- **Tests run by change.** `npm run test:core`, `npm run test:ui`, and `npm test` pick their files in
-  `test/run.ts`, one file at a time, because parallel runs are flaky on this machine. Run the tests
-  [docs/self-editing.md](docs/self-editing.md#checking-a-change) asks for; the full suite is for a release or
+- **Oxfmt and Oxlint replace Prettier and ESLint.** They use `.oxfmtrc.json` and `.oxlintrc.json`. The padding
+  rule runs through `@stylistic/eslint-plugin`; `eslint` stays in `devDependencies` only as its peer and is not
+  run. Take the fork's configs and scripts through a sync, and run `npm run format` after resolving a formatting
+  conflict.
+- **Run the tests a change touches.** `npm run test:core`, `npm run test:ui`, and `npm test` pick their files
+  in `test/run.ts`, one file at a time, because parallel runs are flaky on this machine. Run the tests
+  [docs/self-editing.md](docs/self-editing.md#checking-a-change) asks for. The full suite is for a release or
   when the owner asks.
-- **Docs are the fork's.** `README.md`, this page, and `CONTRIBUTING.md` are the fork's own; take them
-  through a sync. Keep one answer in one place: README is the list, this page the differences and merge rules,
-  features the user tour, map the file ownership, architecture the dependencies, and AGENTS/self-editing the
+- **README, this page, and CONTRIBUTING are the fork's own.** Take them through a sync. Each page answers one
+  question. README gives the list, this page gives the differences and merge rules, and features gives the user
+  tour. Map gives file ownership, architecture gives the dependencies, and AGENTS and self-editing give the
   workflow.
-- **Stored data is never renamed or dropped.** `pocket.purge` is the example: kept in `docs.ts`, and read and
-  written by nothing.
+- **Do not rename or drop stored data.** `pocket.purge` is the example. It stays in `docs.ts`, and nothing
+  reads or writes it.
