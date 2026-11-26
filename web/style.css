@@ -15015,6 +15015,11 @@ textarea.notes {
     min-width: 0;
 }
 
+/* While git answers what the panel shows: the loader takes the same inset as the rows under it. */
+.dr > .loader {
+    padding: 12px 14px;
+}
+
 /* "N files", the counts, how many are viewed, then the layout and Look again. */
 .dr-summary {
     display: flex;
@@ -15224,6 +15229,11 @@ textarea.notes {
 /* What a commit changed, under its row: the same viewer as the review's, one file at a time. */
 .cm-diff {
     padding: 4px 0 10px;
+}
+
+/* A commit's diff while it loads: the inset its summary has, so the wait does not sit on the edge. */
+.cm-diff > .loader {
+    padding: 6px 10px;
 }
 
 .cm-diff-sum {
@@ -15672,6 +15682,11 @@ textarea.notes {
     display: flex;
     height: 100%;
     min-height: 0;
+}
+
+/* The files pane while a folder opens: the loader keeps the pane's inset. */
+.ft > .loader {
+    padding: 12px 14px;
 }
 
 .ft-pane {
