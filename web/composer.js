@@ -2864,6 +2864,7 @@ defineItem("status", {
 });
 
 const cacheRate = () => store.state.view.stats?.cacheRate;
+const cacheWaste = () => store.state.view.stats?.cacheWaste;
 
 defineItem("status", {
     id: "core:cache",
@@ -2874,9 +2875,20 @@ defineItem("status", {
         html`<span class="cache">
             cache <span class="num">${Math.round(cacheRate() * 100)}%</span>
         </span>`,
-    detail: () =>
-        cacheRate() !== undefined &&
-        `${Math.round(cacheRate() * 100)}% of the input came from the cache`,
+    detail: () => {
+        const rate = cacheRate();
+
+        if (rate === undefined) {
+            return "";
+        }
+
+        const line = `${Math.round(rate * 100)}% of the input came from the cache`;
+        const waste = cacheWaste();
+
+        return waste === undefined
+            ? line
+            : `${line}. ${waste.missCount === 1 ? "One cache miss" : `${waste.missCount} cache misses`} re-billed ${formatTokens(waste.missedTokens)} tokens (~$${waste.missedCost.toFixed(2)})`;
+    },
 });
 
 /**

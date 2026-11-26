@@ -17,6 +17,7 @@ import type {
 } from "@earendil-works/pi-durable";
 import type { PocketApp } from "./app.ts";
 import type { Head } from "./branches.ts";
+import { type CacheMiss, type CacheWaste, scanCacheMisses } from "./cache-misses.ts";
 import type { User } from "./config.ts";
 import {
     type ArtifactMeta,
@@ -359,6 +360,9 @@ export class Room {
     #peekTimer: NodeJS.Timeout | undefined;
     readonly #app: PocketApp;
     #view: ActiveView | undefined;
+    /** The prompt-cache misses of the entries the view holds, by the id of the answer that paid each. */
+    #cacheMisses: Map<number, CacheMiss> = new Map();
+    #cacheWaste: CacheWaste = { missedTokens: 0, missedCost: 0, missCount: 0 };
     #watch: ConversationWatch | undefined;
     #timer: NodeJS.Timeout | undefined;
     #closeTimer: NodeJS.Timeout | undefined;
@@ -425,6 +429,7 @@ export class Room {
             docs: watch.value.docs,
             entries: (await conversation.context(context)).entries,
         };
+        this.#scanCache();
         watch.start(async (call) => {
             if (call.kind === "value") {
                 await this.#follow(conversation, call.value);
@@ -630,6 +635,11 @@ export class Room {
 
             if (this.#view !== undefined) {
                 this.#view = { conversation: view.conversation, docs: view.docs, entries };
+
+                if (entries !== held.entries) {
+                    this.#scanCache();
+                }
+
                 this.schedule();
             }
         } catch (error) {
@@ -713,17 +723,32 @@ export class Room {
         this.schedule();
     }
 
+    /**
+     * Count the prompt-cache misses of the entries the view holds. A completed answer's miss never changes, so this runs
+     * only when the view's entries change, not with every streaming commit.
+     */
+    #scanCache(): void {
+        const scan = scanCacheMisses(
+            this.#view?.entries ?? [],
+            (provider, model) => this.#app.models.getModel(provider, model)?.cost.cacheRead,
+        );
+
+        this.#cacheMisses = scan.misses;
+        this.#cacheWaste = scan.waste;
+    }
+
     #entry(entry: EntryRecord): ClientEntry | null {
         const id = entry.id as unknown as number;
         let projected = this.#projected.get(id);
 
         if (projected === undefined) {
+            const cacheMiss = this.#cacheMisses.get(id);
+
             projected =
-                projectEntry(
-                    entry,
-                    false,
-                    presentationOptions(this.#app.webs.presentations(), this.authors, id),
-                ) ?? null;
+                projectEntry(entry, false, {
+                    ...presentationOptions(this.#app.webs.presentations(), this.authors, id),
+                    ...(cacheMiss === undefined ? {} : { cacheMiss }),
+                }) ?? null;
             this.#projected.set(id, projected);
         }
 
@@ -962,7 +987,10 @@ export class Room {
                 this.#app.defaultCwd,
                 this.#app.signInNeeded,
             ),
-            stats: projectStats(view.docs["pi.usage"] as UsageState | undefined, view.entries),
+            stats: {
+                ...projectStats(view.docs["pi.usage"] as UsageState | undefined, view.entries),
+                ...(this.#cacheWaste.missCount === 0 ? {} : { cacheWaste: this.#cacheWaste }),
+            },
             clients: [...new Set([...this.clients].map((each) => each.id))].length,
             viewers: [...new Set([...this.clients].map((each) => each.user.name))],
             approvals: this.#app.approvals.forConversation(this.id),

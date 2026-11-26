@@ -63,6 +63,20 @@ test("stats add the cost of models and tools", () => {
     assert.equal(stats.cost, 0.75);
 });
 
+test("a cache miss rides on the answer that paid it", () => {
+    const message = { role: "assistant", content: [], usage: {}, stopReason: "stop" };
+    const miss = { missedTokens: 30_000, missedCost: 0.4, idleMs: 0, modelChanged: false };
+    const projected = projectEntry(entry("pi.assistant", message), false, { cacheMiss: miss });
+
+    assert.equal(projected?.kind, "assistant");
+    assert.deepEqual((projected as { cacheMiss?: unknown }).cacheMiss, miss);
+    assert.equal(
+        (projectEntry(entry("pi.assistant", message)) as { cacheMiss?: unknown } | undefined)
+            ?.cacheMiss,
+        undefined,
+    );
+});
+
 test("a live update that does not fit what the browser has is refused, not shown wrong", async () => {
     const { liveMessage } = (await import(new URL("../web/live.js", import.meta.url).href)) as {
         liveMessage: (current: unknown, update: unknown) => unknown;

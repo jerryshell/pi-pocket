@@ -329,6 +329,8 @@ export function itemsOf(rows, partial, { prefix = "", from = null, talk = false 
     // A group the rows before left open goes on here, under its name.
     let open = from?.open ?? null;
     let group = null;
+    // The run's prompt-cache misses so far: they show with the answer that ends the run.
+    let misses = from?.misses ?? [];
     // The answer whose calls can still run while Pi works: the newest, when it asked for tools. Calls of any other
     // answer that have no result never ran (it was stopped, or failed).
     const last = rows.at(-1);
@@ -424,7 +426,15 @@ export function itemsOf(rows, partial, { prefix = "", from = null, talk = false 
             return;
         }
 
-        if (!hasEnd(entry, talk)) {
+        if (entry.cacheMiss !== undefined) {
+            misses = [...misses, entry.cacheMiss];
+        }
+
+        // A run's misses stay with the run: the answer that ends it says what all of them were billed again.
+        const counted = misses;
+        const ends = hasEnd(entry, talk) || (counted.length > 0 && entry.stopReason !== "toolUse");
+
+        if (!ends) {
             // Nothing of it shows (only blank words): a jump to it still finds it, where Pi was.
             if (!anchored) {
                 if (group !== null) {
@@ -439,6 +449,7 @@ export function itemsOf(rows, partial, { prefix = "", from = null, talk = false 
 
         if (words !== null) {
             words.end = true;
+            words.misses = counted;
         } else {
             items.push({
                 type: "reply",
@@ -447,8 +458,11 @@ export function itemsOf(rows, partial, { prefix = "", from = null, talk = false 
                 blocks: [],
                 anchor: !anchored,
                 end: true,
+                misses: counted,
             });
         }
+
+        misses = [];
 
         // How it ended (its words, a failure, a stop) ends what Pi was doing.
         close();
@@ -461,6 +475,7 @@ export function itemsOf(rows, partial, { prefix = "", from = null, talk = false 
         }
 
         close();
+        misses = [];
         anchor = entry.id;
         groups = 0;
         replies = 0;
@@ -476,6 +491,7 @@ export function itemsOf(rows, partial, { prefix = "", from = null, talk = false 
         groups,
         replies,
         open: group?.key ?? open,
+        misses,
         // The steps of a group still open here, for its line where the rows shown begin in it.
         before: group?.steps ?? from?.before ?? [],
     };
@@ -502,8 +518,9 @@ export function rowsBefore(rows, start, talk = false) {
 }
 
 /**
- * Whether an answer has anything to show after its last words: a failure, a stop, or (`talk`, where people react to
- * and discuss Pi's answers) a final answer's actions.
+ * Whether an answer has anything to show after its last words: a failure or a stop, or (`talk`, where people react to
+ * and discuss Pi's answers) a final answer's actions. A run's cache misses are added by `answer`, which ends a run whose
+ * misses have nowhere else to show.
  */
 const hasEnd = (entry, talk) =>
     entry.stopReason === "error" ||

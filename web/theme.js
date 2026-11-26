@@ -78,6 +78,8 @@ const DEFAULTS = {
     peeks: false,
     /** How fast the last answer came, in the status line under the message box. Off until turned on. */
     speed: false,
+    /** A large prompt-cache miss under the answer that paid it, and the session's total in the status line. On. */
+    cacheMiss: true,
     /** Pi's current thought above the live line, and its finished thoughts open. Off until turned on. */
     showThinking: false,
     /**

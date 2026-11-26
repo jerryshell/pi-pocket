@@ -7,7 +7,20 @@ type Block =
     | { type: "text"; text: string }
     | { type: "thinking"; text: string }
     | { type: "toolCall"; id: string; name: string; args: Record<string, unknown> };
-type Entry = { id?: number; kind: string; blocks?: Block[]; stopReason?: string; text?: string };
+type Entry = {
+    id?: number;
+    kind: string;
+    blocks?: Block[];
+    stopReason?: string;
+    text?: string;
+    cacheMiss?: CacheMiss;
+};
+type CacheMiss = {
+    missedTokens: number;
+    missedCost: number;
+    idleMs: number;
+    modelChanged: boolean;
+};
 type Step = { block: Block; entry?: Entry; streaming: boolean; canRun: boolean };
 type Item = {
     type: "row" | "activity" | "reply" | "mark" | "inline";
@@ -18,6 +31,7 @@ type Item = {
     anchors?: number[];
     anchor?: boolean;
     end?: boolean;
+    misses?: CacheMiss[];
     step?: Step;
 };
 type Items = Item[] & { state: unknown };
@@ -156,6 +170,45 @@ test("a jump to an answer lands on its words, or on its card when it has none", 
     assert.deepEqual(talking[1]!.anchors, [], "the words take it");
     assert.equal(talking[2]!.anchor, true);
     assert.deepEqual(silent[1]!.anchors, [2]);
+});
+
+test("a run's cache misses show with the answer that ends it", () => {
+    const miss = (missedTokens: number, extra: Partial<CacheMiss> = {}): CacheMiss => ({
+        missedTokens,
+        missedCost: 0,
+        idleMs: 0,
+        modelChanged: false,
+        ...extra,
+    });
+    const rows = [
+        user(1),
+        { ...answer(2, [call("a")]), cacheMiss: miss(10_000) },
+        { ...answer(3, [said("Done.")], "stop"), cacheMiss: miss(15_000) },
+        user(4),
+        {
+            ...answer(5, [said("Again.")], "stop"),
+            cacheMiss: miss(30_000, { modelChanged: true }),
+        },
+    ];
+    const items = turns.itemsOf(rows, null);
+    const replies = items.filter((item) => item.type === "reply");
+
+    // Both misses of the run show with its final answer, and the second run starts over.
+    assert.deepEqual(replies[0]!.misses, [miss(10_000), miss(15_000)]);
+    assert.deepEqual(replies[1]!.misses, [miss(30_000, { modelChanged: true })]);
+    assert.deepEqual((items.state as { misses?: CacheMiss[] }).misses, []);
+
+    // A miss paid by a tool call waits for the answer that ends its run, also across the rows shown.
+    const open = turns.itemsOf(rows.slice(0, 2), null);
+
+    assert.equal(open.filter((item) => item.type === "reply").length, 0);
+    assert.deepEqual((open.state as { misses?: CacheMiss[] }).misses, [miss(10_000)]);
+    const carried = turns.itemsOf(rows.slice(2), null, { from: open.state });
+
+    assert.deepEqual(carried.find((item) => item.type === "reply")?.misses, [
+        miss(10_000),
+        miss(15_000),
+    ]);
 });
 
 test("two inline calls with one id get keys of their own", () => {

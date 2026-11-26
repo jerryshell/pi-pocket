@@ -843,6 +843,16 @@ export function AppearanceSheet() {
                 />
             <//>
             <${SettingRow}
+                title="Cache miss notices"
+                detail="Under the answer that paid for a large prompt-cache miss: the tokens billed again, roughly what they cost, and whether a model switch or a long idle came before. The status line's cache item keeps the session's total"
+            >
+                <${Switch}
+                    on=${p.cacheMiss}
+                    label="Cache miss notices"
+                    onChange=${() => setPrefs({ cacheMiss: !p.cacheMiss })}
+                />
+            <//>
+            <${SettingRow}
                 title="Reply to a passage"
                 detail="Select words in one of Pi's replies, and a Reply button by them quotes them in your next message"
             >

@@ -3,6 +3,7 @@
  * lives only while the module is on. The model still reads the message in full. Nothing here is stored.
  */
 import { createHash } from "node:crypto";
+import type { CacheMiss } from "./cache-misses.ts";
 
 /** Presentations one module may register. */
 export const PRESENTATION_LIMIT = 32;
@@ -127,6 +128,8 @@ export type ProjectOptions = {
     presentations?: EntryPresentations;
     /** A person wrote this entry. A prefix never matches then. */
     authored?: boolean;
+    /** The prompt-cache rebill this answer paid, when the room counted one (`cache-misses.ts`). */
+    cacheMiss?: CacheMiss;
 };
 
 export const EMPTY_PRESENTATIONS: EntryPresentations = {

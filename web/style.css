@@ -3760,6 +3760,14 @@ pre.diff .del {
     overflow-wrap: anywhere;
 }
 
+/* A prompt-cache miss under the answer that paid it: the tokens the provider billed again. */
+.cache-miss {
+    margin-top: 8px;
+    color: var(--warn);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
 .divider {
     text-align: center;
     color: var(--muted);

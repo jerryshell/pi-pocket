@@ -143,6 +143,22 @@ session. The chat keeps that title, and the artifact's own documents keep nothin
 The code lives in `src/server/artifacts.ts`. Tests are in `test/artifact-delete.test.ts`, whose revision scan
 says the title survives nowhere but that line.
 
+### Cache miss notices
+
+Pi's own notices for a prompt cache miss (`showCacheMissNotices`) are a TUI setting, and its `core/cache-stats.ts`
+is not exported by its package. The fork ports the count to Pi Durable's entries: a request whose prompt the
+provider no longer held cached pays for those tokens again, and the answer that paid says so under its last
+words, with the tokens and roughly what they cost. It names a model switch, or 5 minutes or more of idle, as the
+likely cause; it leaves out the first request, the context after a compaction or a fresh start, and a provider
+that never reports cache use; and it shows a miss of 20,000 tokens or $0.10 and more. A miss paid by a tool call
+shows with the answer that ends its run. The status line's cache item adds the session's total, and Appearance →
+Conversation turns the line off.
+
+The code lives in `src/server/cache-misses.ts`, with `room.ts`'s scan, `projection.ts`'s `cacheMiss` and
+`cacheWaste`, `web/turns.js`'s run total, `web/transcript.js`'s line, and `web/theme.js`'s switch. Tests are in
+`test/cache-misses.test.ts`, `test/cache-waste.test.ts`, and `test/cache-waste-ui.test.ts`. Upstream has no
+counterpart.
+
 ## Upstream files this fork changes
 
 A merge must keep each of these. New files are the fork's own and need no resolution.

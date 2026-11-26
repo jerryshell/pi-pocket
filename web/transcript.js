@@ -63,6 +63,7 @@ import {
     clockTime,
     copyText,
     entryImageUrl,
+    formatTokens,
     html,
     Icon,
     Markdown,
@@ -2447,8 +2448,9 @@ function AnswerActions({ entry }) {
     </div>`;
 }
 
-/** How one of Pi's answers ended, under its last words: a failed request, a stop, or the answer's actions. */
-function AnswerEnd({ entry }) {
+/** How one of Pi's answers ended, under its last words: what the provider billed again, a failed request, a stop, or
+ * the answer's actions. */
+function AnswerEnd({ entry, misses }) {
     // A final answer (not a step between tool calls) with something to say gets reactions and the discuss row.
     const answer = collab() && entry.stopReason !== "toolUse" && entry.blocks.some(says);
 
@@ -2457,7 +2459,41 @@ function AnswerEnd({ entry }) {
         html`<div class="error-box">${entry.error ?? "The model request failed."}</div>`
     }
     ${entry.stopReason === "aborted" && html`<div class="muted small">Stopped.</div>`}
+    ${misses?.length > 0 && html`<${CacheMissNote} misses=${misses} />`}
     ${answer && html`<${AnswerActions} entry=${entry} />`}`;
+}
+
+/** A cache miss worth a word: this many tokens, or this much money. */
+const CACHE_NOTICE_TOKENS = 20_000;
+const CACHE_NOTICE_COST = 0.1;
+/** The providers' cache lifetime: a gap this long is the likely cause of a miss. */
+const CACHE_TTL_MS = 5 * 60_000;
+
+/** `84k tokens re-billed (~$0.31)`: what the provider charged again for the prompt it no longer held cached. */
+function CacheMissNote({ misses }) {
+    const counted = misses ?? [];
+    const tokens = counted.reduce((sum, miss) => sum + miss.missedTokens, 0);
+    const cost = counted.reduce((sum, miss) => sum + miss.missedCost, 0);
+
+    if (prefs().cacheMiss !== true || (tokens < CACHE_NOTICE_TOKENS && cost < CACHE_NOTICE_COST)) {
+        return null;
+    }
+
+    const first = counted[0];
+    const cause =
+        counted.length > 1
+            ? ` (${counted.length})`
+            : first.modelChanged
+              ? " after model switch"
+              : first.idleMs >= CACHE_TTL_MS
+                ? ` after ${Math.round(first.idleMs / 60_000)}m idle`
+                : "";
+    const label = counted.length > 1 ? "Cache misses" : "Cache miss";
+    const paid = cost >= 0.01 ? ` (~$${cost.toFixed(2)})` : "";
+
+    return html`<div class="cache-miss">
+        ${label}${cause}: ${formatTokens(tokens)} tokens re-billed${paid}
+    </div>`;
 }
 
 /** A run of Pi's words: plain prose, and how the answer ended when they are its last. */
@@ -2479,7 +2515,7 @@ function Reply({ item, conversationId }) {
                 cache=${!growing}
             />`;
         })}
-        ${item.end && html`<${AnswerEnd} entry=${entry} />`}
+        ${item.end && html`<${AnswerEnd} entry=${entry} misses=${item.misses} />`}
     </div>`;
 }
 
@@ -2896,6 +2932,7 @@ function replyDeps(item, actions) {
         entry,
         item.blocks.length,
         item.end,
+        item.misses,
         item.anchor,
         users,
         me,

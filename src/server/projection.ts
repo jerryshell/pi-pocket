@@ -4,6 +4,7 @@
  */
 import { estimateMessageTokens } from "@earendil-works/pi-ai/utils/estimate";
 import type { EntryRecord, LiveState, UsageState } from "@earendil-works/pi-durable";
+import type { CacheMiss, CacheWaste } from "./cache-misses.ts";
 import {
     COMMAND_ENTRY,
     type CommandData,
@@ -68,6 +69,8 @@ export type ClientEntry =
           provider?: string;
           at?: number;
           partial?: boolean;
+          /** The prompt-cache tokens this answer paid for again, when it paid for a counted one. */
+          cacheMiss?: CacheMiss;
       }
     | {
           id: number;
@@ -586,6 +589,7 @@ export function projectEntry(
                 ...(typeof message?.model === "string" ? { model: message.model } : {}),
                 ...(typeof message?.provider === "string" ? { provider: message.provider } : {}),
                 ...madeAt(message),
+                ...(options?.cacheMiss === undefined ? {} : { cacheMiss: options.cacheMiss }),
             };
         }
 
@@ -835,6 +839,8 @@ export type ClientStats = {
     cost: number;
     /** Share of prompt tokens served from the provider's cache, 0..1; undefined before the first response. */
     cacheRate?: number;
+    /** The conversation's prompt-cache misses count and cost, when one was counted. */
+    cacheWaste?: CacheWaste;
     /** Tokens of the newest response's prompt plus answer: roughly what the context holds. */
     contextTokens?: number;
     /** Output tokens per second of the newest response's stream, after its first token. */
