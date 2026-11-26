@@ -351,7 +351,7 @@ A release with a warning (or notes that could not be read) is never installed by
 
 ## Checking a change
 
-- **Every change:** `npm run check` (types, and no unused imports or locals in the TypeScript), `npm run lint`, and the tests [self-editing.md](self-editing.md#checking-a-change) asks for: `npm test` before a push or release, and for a shared entry point; a feature's own tests otherwise.
+- **Every change:** `npm run check` (types, and no unused imports or locals in the TypeScript), `npm run lint`, and the tests [self-editing.md](self-editing.md#checking-a-change) asks for: the feature's own tests, plus the tests of any shared file it touches. `npm test` is slow, so it is for a release or when the owner asks, not for a push.
 - **Server:** the tests drive a real `PocketApp` with a scripted model, a restart included (`openApp` on the same folder). The built-in browser and peek tiles also run in a real Chromium where one is installed.
 - **Web:**
     - `node --check` each file you edit.

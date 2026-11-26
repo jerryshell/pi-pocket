@@ -13,7 +13,7 @@ Thank you for your help. This page tells how to send a change.
 
 - [AGENTS.md](AGENTS.md) and [docs/self-editing.md](docs/self-editing.md) tell how to work on the code. [docs/map.md](docs/map.md) tells where things are.
 - Add one small test for each real risk that the change brings. The test must fail before the change.
-- Run `npm run format`, `npm run check`, `npm run lint`, and the tests [docs/self-editing.md](docs/self-editing.md#checking-a-change) asks for (`npm test` before a push or release).
+- Run `npm run format`, `npm run check`, `npm run lint`, and the tests [docs/self-editing.md](docs/self-editing.md#checking-a-change) asks for (the feature's own tests, and those of any shared file it touches; `npm test` is slow and is for a release).
 
 ## Send it
 

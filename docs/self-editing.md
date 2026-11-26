@@ -32,17 +32,15 @@ Before you say that the change is done:
 npm run format     # Prettier and ESLint's fixes
 npm run lint
 npm run check      # TypeScript
-npm run test:core  # every test but the app-level browser tests
-npm run test:ui    # the app-level browser tests alone
-npm test           # every test; the browser tests need Chromium; over half an hour
+node --test test/<name>.test.ts  # the tests of what changed
 ```
 
-`npm test` is the slow one: over half an hour for the whole suite, most of it `npm run test:ui`. While you work, run the tests of the part that you changed (`node --test test/<name>.test.ts`). What to run before you say that the change is done depends on what it touches:
+`npm test` is the slow one: over half an hour for the whole suite, most of it `npm run test:ui`. It is not the default, and a push does not need it. While you work, run the tests of the part that you changed (`node --test test/<name>.test.ts`). What to run before you say that the change is done depends on what it touches:
 
-- **A shared entry point: `npm test`.** A change there reaches parts with tests of their own, and the changed feature's tests do not run those. The shared entry points are `src/server/app.ts`, `src/server/config.ts`, `src/server/auth.ts`, `src/server/docs.ts`, `src/server/room.ts`, `src/server/projection.ts`, `src/server/commands.ts`, `src/server/collab.ts`, `src/server/host.ts`, `src/server/reload.ts`, `src/server/extension-web.ts`, `src/server/models.ts`, `src/server/main.ts`, `src/server/http/*`, `bin/*`, `src/launcher/*`, `package.json`, and the web app's own `web/store.js`, `web/app.js`, `web/ui.js`, `web/sheets.js`, and `web/style.css`.
-- **One feature, and nothing above: its own tests, and its UI tests when it has any.** Find them by the module's name, then every test file that imports it: `grep -l "server/share.ts" test/*.test.ts`. The table below has the common areas. A change that leaves that feature's files (a shared helper, another feature's module) is a shared change, and is `npm test`.
-- **More than one feature, with no shared file: `npm run test:core`, plus the UI tests of what changed.** `test:core` runs every file but the app-level browser tests (`*-ui.test.ts` and `browser.test.ts`), so it is the broad check that does not need Chromium. Some other files keep one browser test inside, which skips itself when `findBrowser` finds none (`artifact-bundles.test.ts`, for one).
-- **A push or a release: `npm test`**, whatever moved: there is no CI behind a push in this repository.
+- **A shared entry point: the tests that import it, and the app-level tests of the surface it changes.** A change there reaches parts with tests of their own, so run those files too, not only the changed feature's. The shared entry points are `src/server/app.ts`, `src/server/config.ts`, `src/server/auth.ts`, `src/server/docs.ts`, `src/server/room.ts`, `src/server/projection.ts`, `src/server/commands.ts`, `src/server/collab.ts`, `src/server/host.ts`, `src/server/reload.ts`, `src/server/extension-web.ts`, `src/server/models.ts`, `src/server/main.ts`, `src/server/http/*`, `bin/*`, `src/launcher/*`, `package.json`, and the web app's own `web/store.js`, `web/app.js`, `web/ui.js`, `web/sheets.js`, and `web/style.css`. Use `grep -l "server/room.ts" test/*.test.ts` to find them.
+- **One feature, and nothing above: its own tests, and its UI tests when it has any.** Find them by the module's name, then every test file that imports it: `grep -l "server/share.ts" test/*.test.ts`. The table below has the common areas. A change that leaves that feature's files (a shared helper, another feature's module) is a shared change, and takes the tests of both.
+- **More than one feature, with no shared file: the tests of each, plus the UI tests of what changed.** `npm run test:core` runs every file but the app-level browser tests (`*-ui.test.ts` and `browser.test.ts`), so it is the broad check that does not need Chromium, and is for a change that reaches many features at once. Some other files keep one browser test inside, which skips itself when `findBrowser` finds none (`artifact-bundles.test.ts`, for one).
+- **A push or a release: the tests of what changed.** There is no CI behind a push in this repository, so run the same targeted set a shared entry point takes. `npm test` only for a release or when the owner asks: it is slow, and a targeted run of the changed surface covers a push.
 - **A patch release merge from upstream** (`git diff --name-only v0.28.1 v0.28.2 -- test/`): `npm run check`, `npm run lint`, and the tests the release touches are enough, since most of what it changes is version strings.
 - **A small upstream sync of the vendored `src/server/commandcode/` provider:** `test/commandcode*.test.ts`.
 
