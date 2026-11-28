@@ -122,8 +122,9 @@ what is already committed.
   three seconds.
 - A folder that is itself in a repository reads as before, and so does one with no repository under it.
 - History lists the checked-out branch's commits, newest first, with short hash, subject, author, and when,
-  up to 50. A commit opens its own diff under its row; the repository chips stay, and a clean repository has
-  nothing to review but its history.
+  up to 50. A commit opens its own diff under its row, file by file: each file folds from its header, and
+  **Fold all** folds every one of them (or opens them all again). The repository chips stay, and a clean
+  repository has nothing to review but its history.
 
 The code is in `src/server/changes.ts` (`reposUnder`, `repoState`, `commitsIn`, `commitDiffIn`),
 `src/server/branches.ts` (the `/commits` route), `src/server/workspace.ts`, `web/app.js`, `web/diff.js`,

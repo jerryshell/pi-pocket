@@ -1903,6 +1903,109 @@ test(
     },
 );
 
+test("a commit's files fold on their own, and all at once", real, async () => {
+    await fresh();
+
+    const result = await inPage<{
+        before: { files: number; folds: number; folded: boolean[]; all: string; tables: number };
+        one: { folded: boolean[]; tables: number };
+        all: { folded: boolean[]; all: string; tables: number };
+        again: { folded: boolean[]; all: string };
+    }>(`
+        const { store } = await import("/store.js");
+        const { DiffReview } = await import("/diff.js");
+        const { h, render } = await import("preact");
+        const box = document.createElement("div");
+        const fetched = window.fetch;
+        const patch = [
+            "diff --git a/a.txt b/a.txt",
+            "--- a/a.txt",
+            "+++ b/a.txt",
+            "@@ -1 +1 @@",
+            "-old",
+            "+new",
+            "diff --git a/b.txt b/b.txt",
+            "--- a/b.txt",
+            "+++ b/b.txt",
+            "@@ -1 +1 @@",
+            "-one",
+            "+two",
+        ].join("\\n");
+
+        window.fetch = async (url, ...args) => {
+            const address = String(url);
+
+            if (address.endsWith("/changes")) {
+                return new Response(JSON.stringify({ repo: { root: "/tmp", head: "abc", branch: "main" },
+                    more: 0, piOnly: [], files: [] }));
+            }
+
+            if (address.includes("/commits/diff?")) {
+                return new Response(patch + "\\n");
+            }
+
+            if (address.includes("/commits")) {
+                return new Response(JSON.stringify({ commits: [{ hash: "a".repeat(40), short: "aaaaaaaa",
+                    subject: "two files", author: "T", at: Date.now() / 1000 }] }));
+            }
+
+            return fetched(url, ...args);
+        };
+        document.body.append(box);
+        store.set({ conversationId: ${Number(first)} });
+        const draw = () => render(h(DiffReview, { active: false }), box);
+        draw();
+        const stop = store.subscribe(draw);
+        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+        await wait(800);
+        box.querySelector(".dr-history").click();
+        await wait(400);
+        box.querySelector(".cm-row").click();
+        await wait(600);
+
+        const cards = () => [...box.querySelectorAll(".cm-files .dv")];
+        const folded = () => cards().map((card) => card.classList.contains("folded"));
+        const all = () => box.querySelector(".cm-fold-all")?.textContent.trim();
+        const tables = () => box.querySelectorAll(".cm-files .dv-table").length;
+        const before = { files: cards().length, folds: box.querySelectorAll(".cm-files .dv-fold").length,
+            folded: folded(), all: all(), tables: tables() };
+
+        cards()[0].querySelector(".dv-fold").click();
+        await wait(100);
+        const one = { folded: folded(), tables: tables() };
+
+        box.querySelector(".cm-fold-all").click();
+        await wait(100);
+        const every = { folded: folded(), all: all(), tables: tables() };
+
+        box.querySelector(".cm-fold-all").click();
+        await wait(100);
+        const again = { folded: folded(), all: all() };
+
+        window.fetch = fetched;
+        stop();
+        box.remove();
+
+        return JSON.stringify({ before, one, all: every, again });
+    `);
+
+    assert.equal(result.before.files, 2, "the commit's two files show");
+    assert.equal(result.before.folds, 2, "each with a fold of its own");
+    assert.deepEqual(result.before.folded, [false, false], "both open as the commit opens");
+    assert.equal(result.before.all, "Fold all");
+    assert.equal(result.before.tables, 2);
+
+    assert.deepEqual(result.one.folded, [true, false], "one file folded, the other left open");
+    assert.equal(result.one.tables, 1, "a folded file draws no lines");
+
+    assert.deepEqual(result.all.folded, [true, true], "Fold all folds every file");
+    assert.equal(result.all.all, "Expand all", "and offers to open them again");
+    assert.equal(result.all.tables, 0);
+
+    assert.deepEqual(result.again.folded, [false, false], "Expand all opens every file");
+    assert.equal(result.again.all, "Fold all");
+});
+
 test("a sent HEIC photo shows the JPEG the model got", real, async () => {
     const id = await newSession(app);
 

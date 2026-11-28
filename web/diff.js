@@ -1396,14 +1396,19 @@ function CommitList({ id, repo, asked }) {
     </div>`;
 }
 
-/** One commit's diff, every file of it, read as it opens: `git show`'s patch, in the viewer Changes uses. */
+/**
+ * One commit's diff, every file of it, read as it opens: `git show`'s patch, in the viewer Changes uses. Each file folds
+ * on its own, and Fold all folds them together; they open again for another commit.
+ */
 function CommitDiff({ id, repo, commit }) {
     const [state, setState] = useState({ loading: true, files: [], error: null });
+    const [folded, setFolded] = useState({});
 
     useEffect(() => {
         let live = true;
 
         setState({ loading: true, files: [], error: null });
+        setFolded({});
         fetchCommitDiff(id, commit, repo).then(
             (text) => {
                 if (!live) {
@@ -1434,15 +1439,35 @@ function CommitDiff({ id, repo, commit }) {
 
     const added = state.files.reduce((sum, file) => sum + (file.added ?? 0), 0);
     const removed = state.files.reduce((sum, file) => sum + (file.removed ?? 0), 0);
+    const allFolded = state.files.every((file) => folded[file.path]);
+    const toggle = (path) => setFolded((each) => ({ ...each, [path]: !each[path] }));
+    const toggleAll = () =>
+        setFolded(
+            allFolded ? {} : Object.fromEntries(state.files.map((file) => [file.path, true])),
+        );
 
     return html`<div class="cm-diff">
         <p class="cm-diff-sum">
             <strong>${state.files.length} ${state.files.length === 1 ? "file" : "files"}</strong>
             <${ChangeCounts} added=${added} removed=${removed} />
+            ${
+                state.files.length > 1 &&
+                html`<button type="button" class="chip cm-fold-all" onClick=${toggleAll}>
+                    ${allFolded ? "Expand all" : "Fold all"}
+                </button>`
+            }
         </p>
-        ${state.files.map(
-            (file) => html`<${DiffFile} key=${file.path} file=${file} path=${file.path} />`,
-        )}
+        <div class="cm-files">
+            ${state.files.map(
+                (file) => html`<${DiffFile}
+                    key=${file.path}
+                    file=${file}
+                    path=${file.path}
+                    open=${!folded[file.path]}
+                    onToggle=${() => toggle(file.path)}
+                />`,
+            )}
+        </div>
     </div>`;
 }
 

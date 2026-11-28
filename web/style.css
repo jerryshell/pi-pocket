@@ -15250,6 +15250,19 @@ textarea.notes {
     font-weight: 500;
 }
 
+/* The commit's files, a card each, a little apart: a folded one keeps its header in the list. */
+.cm-files {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Fold all, at the end of the commit's summary, once it changed more than one file. */
+.cm-fold-all {
+    margin-left: auto;
+    background: none;
+}
+
 .cm-hash {
     color: var(--faint);
     font-size: 11.5px;
@@ -17454,7 +17467,8 @@ textarea.notes {
         min-height: max(34px, calc(22px + 18px * var(--space-y)));
     }
     .browser-servers .chip,
-    .dr-tools .chip {
+    .dr-tools .chip,
+    .cm-fold-all {
         min-height: 38px;
     }
     .dr-filter {
