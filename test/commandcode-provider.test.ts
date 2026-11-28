@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { getConfiguredApiKey } from "../src/server/commandcode/api-key.ts";
 import { startAuthServer } from "../src/server/commandcode/auth-server.ts";
+import { COMMAND_CODE_CLI_VERSION } from "../src/server/commandcode/commandcode-catalog.ts";
 import {
     refreshToken,
     validateApiKey,
@@ -92,7 +93,7 @@ function close(auth: { server: { listening: boolean; close: () => unknown } }): 
 }
 
 test("the prices carry the free tier's zero rates, the dated Ling preview's list rates, and the ultrafast model's single rate", () => {
-    assert.equal(PRICING_LAST_VERIFIED, "2026-11-20");
+    assert.equal(PRICING_LAST_VERIFIED, "2026-11-23");
     assert.deepEqual(MODEL_COSTS["recursive/flint-v1.0:free"], {
         input: 0,
         output: 0,
@@ -111,12 +112,17 @@ test("the prices carry the free tier's zero rates, the dated Ling preview's list
         cacheRead: 0.075,
         cacheWrite: 1.875,
     });
-    assert.deepEqual(MODEL_COSTS["thinkingmachines/inkling-2-small:free"], {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
+    assert.deepEqual(MODEL_COSTS["thinkingmachines/inkling-2-mini"], {
+        input: 0.075,
+        output: 0.3,
+        cacheRead: 0.015,
         cacheWrite: 0,
     });
+    assert.equal(
+        MODEL_COSTS["thinkingmachines/inkling-2-small:free"],
+        undefined,
+        "the retired free Inkling is gone",
+    );
     assert.equal(
         MODEL_COSTS["stealth/crouton-alpha"],
         undefined,
@@ -172,6 +178,35 @@ test("the prices carry the free tier's zero rates, the dated Ling preview's list
             { inputTokensAbove: 272_000, input: 16, output: 60, cacheRead: 0.8, cacheWrite: 20 },
         ],
     });
+});
+
+test("the CLI 1.93.5 catalog gives Gemini 4 Neon its facts, and replaces Inkling 2 Small with Inkling 2 Mini", () => {
+    assert.equal(COMMAND_CODE_CLI_VERSION, "1.93.5");
+
+    const added = [
+        {
+            id: "google/gemini-4-neon",
+            efforts: ["low", "medium", "high", "xhigh"],
+        },
+        {
+            id: "thinkingmachines/inkling-2-mini",
+            efforts: ["off", "low", "medium", "high", "max"],
+        },
+    ];
+
+    for (const { id, efforts } of added) {
+        assert.deepEqual(inputModalitiesForModel(id), ["text", "image"]);
+        assert.equal(MODEL_REASONING[id], true);
+        assert.deepEqual(MODEL_EFFORTS[id], efforts);
+        assert.deepEqual(thinkingMetadataForModel(id)?.thinking?.efforts, efforts);
+    }
+
+    assert.equal(
+        MODEL_REASONING["thinkingmachines/inkling-2-small:free"],
+        undefined,
+        "the retired free Inkling is gone",
+    );
+    assert.equal(MODEL_MAX_OUTPUT_TOKENS["thinkingmachines/inkling-2-small:free"], undefined);
 });
 
 test("the CLI 1.91.1 catalog adds GPT-6.2 Astra and Sol, and Hy4, with their own facts", () => {

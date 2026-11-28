@@ -18,28 +18,49 @@ interface TransportDependencies<TModel extends ModelLike, TContext> {
     ) => AssistantMessageEventStreamLike;
 }
 
+const MODEL_NOT_IN_PLAN =
+    "Command Code refused this model for the current plan (403 MODEL_NOT_IN_PLAN). " +
+    "Select a model included in your plan or check your model access in Command Code. " +
+    "This is a model-specific refusal, not a sign-in failure.";
+
+/** Why the Provider API refused a request: the plan, or one model the plan leaves out. */
+type ProviderDenial = "upgrade_required" | "model_not_in_plan";
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-async function isUpgradeRequired(response: Response): Promise<boolean> {
+async function providerDenial(response: Response): Promise<ProviderDenial | undefined> {
     if (response.status !== 403) {
-        return false;
+        return undefined;
     }
 
     try {
         const body: unknown = await response.clone().json();
 
         if (!isRecord(body)) {
-            return false;
+            return undefined;
         }
 
         const error = isRecord(body.error) ? body.error : body;
 
-        return error.code === "upgrade_required";
+        if (error.code === "upgrade_required") {
+            return "upgrade_required";
+        }
+
+        if (
+            error.code === "FORBIDDEN" &&
+            error.type === "permission_error" &&
+            typeof error.message === "string" &&
+            error.message.startsWith("MODEL_NOT_IN_PLAN:")
+        ) {
+            return "model_not_in_plan";
+        }
     } catch {
-        return false;
+        // A body that cannot be read stays on the host's own error path.
     }
+
+    return undefined;
 }
 
 export function createCommandCodeTransportRouter<TModel extends ModelLike, TContext>(
@@ -89,21 +110,19 @@ export function createCommandCodeTransportRouter<TModel extends ModelLike, TCont
             }
 
             const output = deps.createStream();
-            let upgradeRequired = false;
+            let denial: ProviderDenial | undefined;
             const fetchImpl = options?.fetch ?? fetch;
             const providerOptions: StreamOptions = {
                 ...options,
                 fetch: async (input, init) => {
                     const response = await fetchImpl(input, init);
 
-                    if (await isUpgradeRequired(response)) {
-                        upgradeRequired = true;
-                    }
+                    denial ??= await providerDenial(response);
 
                     return response;
                 },
                 onResponse: async (response, responseModel) => {
-                    if (upgradeRequired) {
+                    if (denial === "upgrade_required") {
                         return;
                     }
 
@@ -116,29 +135,37 @@ export function createCommandCodeTransportRouter<TModel extends ModelLike, TCont
 
                 try {
                     for await (const event of providerStream) {
-                        if (!upgradeRequired) {
-                            if (generation === requestGeneration) {
-                                transport = "provider";
-                            }
-
-                            output.push(event);
+                        if (denial) {
+                            continue;
                         }
+
+                        if (generation === requestGeneration) {
+                            transport = "provider";
+                        }
+
+                        output.push(event);
                     }
                 } catch (error) {
                     // Defense in depth for adapters whose iterators reject after HTTP errors;
-                    // current Pi/OMP adapters emit error events instead. Only an inspected
-                    // upgrade_required response permits generate fallback.
-                    if (!upgradeRequired) {
+                    // current Pi/OMP adapters emit error events instead. Only an inspected 403
+                    // permits generate fallback or a denial's own explanation.
+                    if (!denial) {
                         throw error;
                     }
                 }
 
-                if (upgradeRequired) {
+                if (denial === "upgrade_required") {
                     if (generation === requestGeneration) {
                         transport = "generate";
                     }
 
                     await pipe(deps.streamGenerate(model, context, options), output);
+                } else if (denial === "model_not_in_plan") {
+                    if (generation === requestGeneration) {
+                        transport = "provider";
+                    }
+
+                    throw new Error(MODEL_NOT_IN_PLAN);
                 }
 
                 output.end();

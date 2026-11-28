@@ -342,6 +342,106 @@ test("a 403 that is not upgrade_required does not fall back", async () => {
     assert.equal(generated, 0);
     assert.equal(router.getTransport(), "provider");
     assert.equal(events.at(-1)?.type, "error");
+    assert.match(
+        (events.at(-1) as { error: { errorMessage: string } }).error.errorMessage,
+        /Command Code API error 403: forbidden/,
+        "a 403 the body does not explain stays the host's own message",
+    );
+});
+
+test("a 403 MODEL_NOT_IN_PLAN explains the model's refusal, and never falls back", async () => {
+    let generated = 0;
+    const refused = providerTransport((model) =>
+        failure(model, "Command Code API error 403: FORBIDDEN"),
+    );
+    const router = createCommandCodeTransportRouter<ModelLike, ContextLike>({
+        createStream: newStream,
+        streamProvider: refused,
+        streamGenerate: (model, context) => {
+            generated += 1;
+
+            return newStream() as AssistantMessageEventStreamLike;
+        },
+    });
+    const events = await collect(
+        router.stream(MODEL, CONTEXT, {
+            apiKey: "user_x",
+            fetch: answer(403, {
+                error: {
+                    code: "FORBIDDEN",
+                    type: "permission_error",
+                    message: "MODEL_NOT_IN_PLAN: raw-private-provider-error",
+                },
+            }),
+        }),
+    );
+    const last = events.at(-1) as { type: string; error: { errorMessage: string } };
+
+    assert.equal(generated, 0, "the Go plan's endpoint does not serve a model refusal");
+    assert.equal(router.getTransport(), "provider");
+    assert.equal(last.type, "error");
+    assert.match(last.error.errorMessage, /MODEL_NOT_IN_PLAN/);
+    assert.match(last.error.errorMessage, /not a sign-in failure/);
+    assert.doesNotMatch(
+        last.error.errorMessage,
+        /raw-private-provider-error/,
+        "the provider's own words stay out of the explanation",
+    );
+});
+
+test("only a 403 whose message starts with MODEL_NOT_IN_PLAN is explained", async () => {
+    const cases = [
+        [
+            401,
+            {
+                error: {
+                    code: "FORBIDDEN",
+                    type: "permission_error",
+                    message: "MODEL_NOT_IN_PLAN: not this status",
+                },
+            },
+        ],
+        [
+            403,
+            {
+                error: {
+                    code: "FORBIDDEN",
+                    type: "permission_error",
+                    message: "Authentication failed.",
+                },
+            },
+        ],
+        [
+            403,
+            {
+                error: {
+                    code: "FORBIDDEN",
+                    type: "permission_error",
+                    message: "Unexpected text MODEL_NOT_IN_PLAN: not a prefix",
+                },
+            },
+        ],
+    ] as const;
+
+    for (const [status, body] of cases) {
+        const router = createCommandCodeTransportRouter<ModelLike, ContextLike>({
+            createStream: newStream,
+            streamProvider: providerTransport((model) =>
+                failure(model, "Command Code API error: the host's own words"),
+            ),
+            streamGenerate: () => newStream() as AssistantMessageEventStreamLike,
+        });
+        const events = await collect(
+            router.stream(MODEL, CONTEXT, { apiKey: "user_x", fetch: answer(status, body) }),
+        );
+        const last = events.at(-1) as { error: { errorMessage: string } };
+
+        assert.match(
+            last.error.errorMessage,
+            /the host's own words/,
+            `${status} ${JSON.stringify(body)}`,
+        );
+    }
 });
 
 test("a new key probes the Provider API again", async () => {

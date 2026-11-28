@@ -5,7 +5,7 @@ code must keep. The fork's overview is [FORK.md](../../../FORK.md).
 
 Vendored from [`patlux/pi-commandcode-provider`](https://github.com/patlux/pi-commandcode-provider),
 under the MIT license in `LICENSE`. The catalog, the sign-in, and the account's endpoints are
-upstream 0.8.7 (commit `7a06135`); `generate/` is upstream 0.7.12 (commit `0f568ff`), where the
+upstream 0.8.8 (commit `7d71cc7`); `generate/` is upstream 0.7.12 (commit `0f568ff`), where the
 `/alpha/generate` client still shipped.
 
 **What a sync must keep.**
@@ -22,7 +22,7 @@ Copied: `models.ts` (the catalog, its cache, each model's wire and thinking leve
 back to), `api-key.ts` (the stored key), `pricing.ts` (display prices),
 `commandcode-catalog.ts` with `commandcode-catalog-overrides.ts` (Pi's image input,
 reasoning, and output limits per model, from Command Code's CLI catalog at
-`command-code@1.91.1`), `responses-compat.ts` (two Responses body repairs the models of
+`command-code@1.93.5`), `responses-compat.ts` (two Responses body repairs the models of
 `zai-org/GLM-5.3` and `mistral/mistral-large-4` need, and the stream trait of the model whose
 thinking arrives as plaintext `encrypted_content`), `responses-stream.ts` (the Responses
 reasoning-frame adapter), `zdr.ts` (the zero-data-retention opt-in, its settings file, and its
@@ -42,7 +42,9 @@ Pi Pocket adapts it in `../extensions/commandcode.ts`:
   account the Provider API refuses is served by Command Code's own endpoint, as it was through
   0.7.12. Once a key falls back, later requests with it go straight there; a key change probes
   the Provider API again. `generate/router.ts` holds that decision, and `test/commandcode-generate.test.ts`
-  pins it: `403 upgrade_required` falls back, any other 403 does not.
+  pins it: `403 upgrade_required` falls back, any other 403 does not. A `403 MODEL_NOT_IN_PLAN`
+  names one model the account's plan leaves out, explains itself as 0.8.8 does, and does not fall
+  back: it is a refusal of that model, not a sign-in failure.
 - The sign-in asks first: paste an API key, or the provider's browser flow, which needs a
   browser on the server's machine because its callback is a local port. A refresh checks the
   stored key against `whoami` first, as upstream 0.8.4 does: a revoked key fails with
